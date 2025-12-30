@@ -2,16 +2,15 @@
 // BACKEND CONFIGURATION
 // ============================================
 // To switch backends, simply change the BACKEND_MODE value below
-// Options: 'NEW', 'OLD', 'LOCALHOST', 'BACKEND_WORKER'
-// Using BACKEND_WORKER to connect to the local backend-worker
-const BACKEND_MODE = 'BACKEND_WORKER'; // Set to 'BACKEND_WORKER' for local backend-worker, 'LOCALHOST' for local testing
+// Options: 'NEW', 'OLD', 'LOCALHOST', 'BACKEND_WORKER', 'PRODUCTION'
+// Using PRODUCTION for live deployment
+const BACKEND_MODE = 'PRODUCTION'; // Set to 'PRODUCTION' for live, 'BACKEND_WORKER' for local backend-worker
 
 // API URLs
 const BACKEND_URLS = {
-  NEW: 'https://chat-apiv3.0804.in',      // New backend (Chat-Agent-Backend-V3)
-  OLD: 'https://api.0804.in',             // Hosted backend
-  LOCALHOST: 'http://localhost:5000',     // Local development (new backend)
-  BACKEND_WORKER: 'http://localhost:5000' // Local backend-worker (default port 5000)
+ 
+  BACKEND_WORKER: 'http://localhost:5000', // Local backend-worker (default port 5000)
+  PRODUCTION: 'https://whatsapp-agent-api.0804.in' // Production backend URL
 };
 
 // ============================================
