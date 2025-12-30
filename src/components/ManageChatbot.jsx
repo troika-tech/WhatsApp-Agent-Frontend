@@ -1,0 +1,1415 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  FaSpinner, FaRobot, FaPlus, FaCog, FaUser, FaFileAlt, FaUpload, FaTrash,
+  FaPowerOff, FaRedo, FaComments, FaBrain, FaTimes, FaCheck, FaToggleOn, FaToggleOff,
+  FaExclamationTriangle, FaMagic
+} from 'react-icons/fa';
+import { toast } from 'react-toastify';
+import api from '../services/api';
+
+const ManageChatbot = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [chatbotAccounts, setChatbotAccounts] = useState([]);
+  const [whatsappAccounts, setWhatsappAccounts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [togglingChatbotId, setTogglingChatbotId] = useState(null);
+
+  // Global toggle state
+  const [globalToggling, setGlobalToggling] = useState(false);
+  const [toggleProgress, setToggleProgress] = useState({ current: 0, total: 0 });
+
+  // Auto-chat state
+  const [autoChatEnabled, setAutoChatEnabled] = useState(false);
+  const [autoChatLoading, setAutoChatLoading] = useState(false);
+  const [showAutoChatDialog, setShowAutoChatDialog] = useState(false);
+  const [autoChatTopic, setAutoChatTopic] = useState('');
+  const [currentAutoChatTopic, setCurrentAutoChatTopic] = useState('');
+
+  // Add Chatbot Modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedInstanceId, setSelectedInstanceId] = useState('');
+  const [addingChatbot, setAddingChatbot] = useState(false);
+
+  // System Prompt Modal
+  const [showSystemPromptModal, setShowSystemPromptModal] = useState(false);
+  const [selectedChatbot, setSelectedChatbot] = useState(null);
+  const [systemPromptValue, setSystemPromptValue] = useState('');
+  const [savingSystemPrompt, setSavingSystemPrompt] = useState(false);
+
+  // Persona Modal
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
+  const [personaValue, setPersonaValue] = useState('');
+  const [savingPersona, setSavingPersona] = useState(false);
+
+  // Static Templates Modal
+  const [showStaticTemplatesModal, setShowStaticTemplatesModal] = useState(false);
+  const [staticTemplatesValue, setStaticTemplatesValue] = useState('');
+  const [savingStaticTemplates, setSavingStaticTemplates] = useState(false);
+
+  // Knowledge Base Modal
+  const [showKBModal, setShowKBModal] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Delete Confirmation Modal
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingChatbotId, setDeletingChatbotId] = useState(null);
+  const [deletingChatbot, setDeletingChatbot] = useState(false);
+
+  // Check user role on mount
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      const userData = JSON.parse(userStr);
+      setUser(userData);
+      if (userData.role !== 'admin') {
+        toast.error('Access denied. Admin only.');
+        navigate('/dashboard');
+        return;
+      }
+      loadData();
+    } else {
+      navigate('/login');
+    }
+  }, [navigate]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Load chatbot accounts, WhatsApp accounts, and auto-chat status in parallel
+      const [chatbotRes, waRes, autoChatRes] = await Promise.all([
+        api.get('/api/chatbot-accounts'),
+        api.get('/api/accounts'),
+        api.get('/api/auto-chat/status').catch(() => ({ data: { success: true, data: { enabled: false } } })),
+      ]);
+
+      setChatbotAccounts(chatbotRes.data.chatbotAccounts || []);
+      setWhatsappAccounts(waRes.data.accounts || []);
+      setAutoChatEnabled(autoChatRes.data.data?.enabled || false);
+      setCurrentAutoChatTopic(autoChatRes.data.data?.config?.topic || '');
+    } catch (error) {
+      console.error('Load data error:', error);
+      toast.error('Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-chat handlers
+  const handleStartAutoChat = async () => {
+    if (!autoChatTopic.trim()) {
+      toast.error('Please enter a topic for the conversation');
+      return;
+    }
+
+    setAutoChatLoading(true);
+    try {
+      const topicToStart = autoChatTopic.trim();
+      await api.post('/api/auto-chat/start', { topic: topicToStart });
+      setAutoChatEnabled(true);
+      setCurrentAutoChatTopic(topicToStart);
+      setShowAutoChatDialog(false);
+      setAutoChatTopic('');
+      toast.success(`Auto-chat started on topic: "${topicToStart}"`);
+    } catch (error) {
+      console.error('Auto-chat start error:', error);
+      toast.error(error.response?.data?.error || 'Failed to start auto-chat');
+    } finally {
+      setAutoChatLoading(false);
+    }
+  };
+
+  const handleStopAutoChat = async () => {
+    setAutoChatLoading(true);
+    try {
+      await api.post('/api/auto-chat/stop');
+      setAutoChatEnabled(false);
+      setCurrentAutoChatTopic('');
+      toast.success('Auto-chat stopped');
+    } catch (error) {
+      console.error('Auto-chat stop error:', error);
+      toast.error(error.response?.data?.error || 'Failed to stop auto-chat');
+    } finally {
+      setAutoChatLoading(false);
+    }
+  };
+
+  // Get available WhatsApp accounts
+  const availableWhatsappAccounts = whatsappAccounts.filter(wa =>
+    !chatbotAccounts.some(cb => cb.instanceId === wa._id)
+  );
+
+  // Add new chatbot
+  const handleAddChatbot = async () => {
+    if (!selectedInstanceId) {
+      toast.error('Please select a WhatsApp account');
+      return;
+    }
+
+    setAddingChatbot(true);
+    try {
+      const response = await api.post('/api/chatbot-accounts', {
+        instanceId: selectedInstanceId,
+      });
+
+      setChatbotAccounts(prev => [...prev, response.data.chatbotAccount]);
+      setShowAddModal(false);
+      setSelectedInstanceId('');
+      toast.success('Chatbot created successfully');
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to create chatbot');
+    } finally {
+      setAddingChatbot(false);
+    }
+  };
+
+  // Toggle chatbot enabled/disabled
+  const handleToggleChatbot = async (chatbotId) => {
+    setTogglingChatbotId(chatbotId);
+    try {
+      const response = await api.post(`/api/chatbot-accounts/${chatbotId}/toggle`, {});
+
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, enabled: response.data.enabled } : cb
+        )
+      );
+
+      toast.success(response.data.enabled ? 'Chatbot enabled' : 'Chatbot disabled');
+    } catch (error) {
+      console.error('Toggle error:', error);
+      toast.error(`Failed to toggle chatbot: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setTogglingChatbotId(null);
+    }
+  };
+
+  // Global Enable All Chatbots
+  const handleEnableAllChatbots = async () => {
+    const disabledChatbots = chatbotAccounts.filter(cb => !cb.enabled);
+
+    if (disabledChatbots.length === 0) {
+      toast.error('All chatbots are already enabled');
+      return;
+    }
+
+    setGlobalToggling(true);
+    setToggleProgress({ current: 0, total: disabledChatbots.length });
+
+    let successCount = 0;
+    let skippedCount = 0;
+
+    for (let i = 0; i < disabledChatbots.length; i++) {
+      const chatbot = disabledChatbots[i];
+      setToggleProgress({ current: i + 1, total: disabledChatbots.length });
+
+      try {
+        const response = await api.post(`/api/chatbot-accounts/${chatbot._id}/toggle`, {});
+
+        if (response.data.enabled) {
+          setChatbotAccounts(prev =>
+            prev.map(cb =>
+              cb._id === chatbot._id ? { ...cb, enabled: true } : cb
+            )
+          );
+          successCount++;
+        }
+      } catch (error) {
+        console.warn(`Skipped chatbot ${chatbot.phoneNumber}:`, error.response?.data?.error || error.message);
+        if (error.response?.data?.error?.includes('WhatsApp connection pending') ||
+            error.response?.data?.error?.includes('not connected')) {
+          skippedCount++;
+        }
+      }
+    }
+
+    setGlobalToggling(false);
+    setToggleProgress({ current: 0, total: 0 });
+
+    if (successCount > 0) {
+      toast.success(`Enabled ${successCount} chatbot${successCount > 1 ? 's' : ''}${skippedCount > 0 ? `, skipped ${skippedCount} (connection pending)` : ''}`);
+    } else if (skippedCount > 0) {
+      toast.error(`Could not enable any chatbots. ${skippedCount} skipped due to WhatsApp connection issues.`);
+    }
+  };
+
+  // Global Disable All Chatbots
+  const handleDisableAllChatbots = async () => {
+    const enabledChatbots = chatbotAccounts.filter(cb => cb.enabled);
+
+    if (enabledChatbots.length === 0) {
+      toast.error('All chatbots are already disabled');
+      return;
+    }
+
+    setGlobalToggling(true);
+    setToggleProgress({ current: 0, total: enabledChatbots.length });
+
+    let successCount = 0;
+
+    for (let i = 0; i < enabledChatbots.length; i++) {
+      const chatbot = enabledChatbots[i];
+      setToggleProgress({ current: i + 1, total: enabledChatbots.length });
+
+      try {
+        const response = await api.post(`/api/chatbot-accounts/${chatbot._id}/toggle`, {});
+
+        if (!response.data.enabled) {
+          setChatbotAccounts(prev =>
+            prev.map(cb =>
+              cb._id === chatbot._id ? { ...cb, enabled: false } : cb
+            )
+          );
+          successCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to disable chatbot ${chatbot.phoneNumber}:`, error.response?.data?.error || error.message);
+      }
+    }
+
+    setGlobalToggling(false);
+    setToggleProgress({ current: 0, total: 0 });
+
+    if (successCount > 0) {
+      toast.success(`Disabled ${successCount} chatbot${successCount > 1 ? 's' : ''}`);
+    }
+  };
+
+  // Delete chatbot handlers
+  const handleDeleteChatbot = (chatbotId) => {
+    setDeletingChatbotId(chatbotId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteChatbot = async () => {
+    if (!deletingChatbotId) return;
+
+    setDeletingChatbot(true);
+    try {
+      await api.delete(`/api/chatbot-accounts/${deletingChatbotId}`);
+      setChatbotAccounts(prev => prev.filter(cb => cb._id !== deletingChatbotId));
+      toast.success('Chatbot deleted successfully');
+      setShowDeleteConfirm(false);
+      setDeletingChatbotId(null);
+    } catch (error) {
+      toast.error('Failed to delete chatbot');
+    } finally {
+      setDeletingChatbot(false);
+    }
+  };
+
+  // Save System Prompt
+  const handleSaveSystemPrompt = async () => {
+    if (!selectedChatbot) return;
+
+    setSavingSystemPrompt(true);
+    try {
+      await api.put(`/api/chatbot-accounts/${selectedChatbot._id}`, {
+        systemPrompt: systemPromptValue
+      });
+
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === selectedChatbot._id ? { ...cb, systemPrompt: systemPromptValue } : cb
+        )
+      );
+
+      setShowSystemPromptModal(false);
+      toast.success('System prompt saved');
+    } catch (error) {
+      toast.error('Failed to save system prompt');
+    } finally {
+      setSavingSystemPrompt(false);
+    }
+  };
+
+  // Save Persona
+  const handleSavePersona = async () => {
+    if (!selectedChatbot) return;
+
+    setSavingPersona(true);
+    try {
+      await api.put(`/api/chatbot-accounts/${selectedChatbot._id}`, {
+        persona: personaValue
+      });
+
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === selectedChatbot._id ? { ...cb, persona: personaValue } : cb
+        )
+      );
+
+      setShowPersonaModal(false);
+      toast.success('Persona saved');
+    } catch (error) {
+      toast.error('Failed to save persona');
+    } finally {
+      setSavingPersona(false);
+    }
+  };
+
+  // Save Static Templates
+  const handleSaveStaticTemplates = async () => {
+    if (!selectedChatbot) return;
+
+    setSavingStaticTemplates(true);
+    try {
+      // Validate JSON format
+      try {
+        JSON.parse(staticTemplatesValue);
+      } catch (e) {
+        toast.error('Invalid JSON format for static templates');
+        setSavingStaticTemplates(false);
+        return;
+      }
+
+      await api.put(`/api/chatbot-accounts/${selectedChatbot._id}`, {
+        staticTemplates: staticTemplatesValue
+      });
+
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === selectedChatbot._id ? { ...cb, staticTemplates: staticTemplatesValue } : cb
+        )
+      );
+
+      setShowStaticTemplatesModal(false);
+      toast.success('Static templates saved');
+    } catch (error) {
+      toast.error('Failed to save static templates');
+    } finally {
+      setSavingStaticTemplates(false);
+    }
+  };
+
+  // Upload Knowledge File
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedChatbot) return;
+
+    // Check file size (50MB max)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('File size must be less than 50MB');
+      return;
+    }
+
+    // Check file type
+    const allowedTypes = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const allowedExts = ['.pdf', '.txt', '.docx'];
+    const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
+      toast.error('Only PDF, TXT, and DOCX files are allowed');
+      return;
+    }
+
+    setUploadingFile(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      await api.post(`/api/chatbot-accounts/${selectedChatbot._id}/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      toast.success('File uploaded, processing started');
+      loadData();
+      setTimeout(() => refreshChatbotFiles(selectedChatbot._id), 5000);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to upload file');
+    } finally {
+      setUploadingFile(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Refresh chatbot files
+  const refreshChatbotFiles = async (chatbotId) => {
+    try {
+      const response = await api.get(`/api/chatbot-accounts/${chatbotId}/files`);
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, knowledgeFiles: response.data.files } : cb
+        )
+      );
+
+      const hasProcessing = response.data.files.some(f => f.status === 'processing');
+      if (hasProcessing) {
+        setTimeout(() => refreshChatbotFiles(chatbotId), 5000);
+      }
+    } catch (error) {
+      console.error('Failed to refresh files:', error);
+    }
+  };
+
+  // Delete Knowledge File
+  const handleDeleteFile = async (filename) => {
+    if (!selectedChatbot) return;
+
+    try {
+      await api.delete(`/api/chatbot-accounts/${selectedChatbot._id}/files/${encodeURIComponent(filename)}`);
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === selectedChatbot._id
+            ? { ...cb, knowledgeFiles: cb.knowledgeFiles.filter(f => f.filename !== filename) }
+            : cb
+        )
+      );
+      toast.success('File deleted');
+      loadData();
+    } catch (error) {
+      toast.error('Failed to delete file');
+    }
+  };
+
+  // Toggle settings
+  const handleToggleAutoChatExclusion = async (chatbotId, excluded) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}`, { excludeFromAutoChat: excluded });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, excludeFromAutoChat: excluded } : cb
+        )
+      );
+      toast.success(excluded ? 'Chatbot excluded from auto-chat' : 'Chatbot included in auto-chat');
+    } catch (error) {
+      toast.error('Failed to update auto-chat exclusion');
+    }
+  };
+
+  const handleToggleStaticTemplates = async (chatbotId, enabled) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}`, { useStaticTemplates: enabled });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, useStaticTemplates: enabled } : cb
+        )
+      );
+      toast.success(enabled ? 'Static templates enabled' : 'Static templates disabled');
+    } catch (error) {
+      toast.error('Failed to update static templates setting');
+    }
+  };
+
+  const handleToggleLeadKeywords = async (chatbotId, enabled) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}/keywords`, { leadKeywordsEnabled: enabled });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, leadKeywordsEnabled: enabled } : cb
+        )
+      );
+      toast.success(enabled ? 'Lead keyword capture enabled' : 'Lead keyword capture disabled');
+    } catch (error) {
+      toast.error('Failed to update lead keyword setting');
+    }
+  };
+
+  const handleToggleFollowUpKeywords = async (chatbotId, enabled) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}/keywords`, { followUpKeywordsEnabled: enabled });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, followUpKeywordsEnabled: enabled } : cb
+        )
+      );
+      toast.success(enabled ? 'Follow-up keyword capture enabled' : 'Follow-up keyword capture disabled');
+    } catch (error) {
+      toast.error('Failed to update follow-up keyword setting');
+    }
+  };
+
+  const handleSaveLeadKeywords = async (chatbotId, keywords) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}/keywords`, { leadKeywords: keywords });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, leadKeywords: keywords } : cb
+        )
+      );
+      toast.success('Lead keywords saved');
+    } catch (error) {
+      toast.error('Failed to save lead keywords');
+    }
+  };
+
+  const handleSaveFollowUpKeywords = async (chatbotId, keywords) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}/keywords`, { followUpKeywords: keywords });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, followUpKeywords: keywords } : cb
+        )
+      );
+      toast.success('Follow-up keywords saved');
+    } catch (error) {
+      toast.error('Failed to save follow-up keywords');
+    }
+  };
+
+  // Format file size
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  // Don't render if not admin
+  if (!user || user.role !== 'admin') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-emerald-500 mx-auto mb-4" size={48} />
+          <p className="text-zinc-500 text-sm">Access denied. Admin only.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-emerald-500 mx-auto mb-4" size={48} />
+          <p className="text-zinc-500 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-full space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+            <FaRobot className="w-6 h-6 text-emerald-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
+              Manage Chatbot
+            </h1>
+            <p className="text-sm text-zinc-500 mt-1">
+              Configure and manage your WhatsApp chatbots
+              <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                {chatbotAccounts.length} {chatbotAccounts.length === 1 ? 'Chatbot' : 'Chatbots'}
+              </span>
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setShowAddModal(true)}
+            disabled={availableWhatsappAccounts.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FaPlus size={16} />
+            Add Chatbot
+          </button>
+
+          {chatbotAccounts.length > 0 && (
+            <>
+              <button
+                onClick={handleEnableAllChatbots}
+                disabled={globalToggling || chatbotAccounts.filter(cb => !cb.enabled).length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center"
+              >
+                {globalToggling && toggleProgress.total > 0 ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    {toggleProgress.current}/{toggleProgress.total}
+                  </>
+                ) : (
+                  <>
+                    <FaPowerOff size={14} />
+                    Enable All ({chatbotAccounts.filter(cb => cb.enabled).length}/{chatbotAccounts.length})
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleDisableAllChatbots}
+                disabled={globalToggling || chatbotAccounts.filter(cb => cb.enabled).length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px] justify-center"
+              >
+                {globalToggling && toggleProgress.total > 0 ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    {toggleProgress.current}/{toggleProgress.total}
+                  </>
+                ) : (
+                  <>
+                    <FaPowerOff size={14} />
+                    Disable All
+                  </>
+                )}
+              </button>
+            </>
+          )}
+
+          {autoChatEnabled ? (
+            <button
+              onClick={handleStopAutoChat}
+              disabled={autoChatLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-all disabled:opacity-50 min-w-[160px] justify-center"
+            >
+              {autoChatLoading ? (
+                <FaSpinner className="animate-spin" size={14} />
+              ) : (
+                <FaComments size={14} />
+              )}
+              Stop Auto-Chat
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowAutoChatDialog(true)}
+              disabled={chatbotAccounts.length < 2}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-medium rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center"
+            >
+              <FaComments size={14} />
+              Start Auto-Chat
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Auto-chat info banner */}
+      {autoChatEnabled && (
+        <div className="glass-card rounded-xl p-4 border border-emerald-200 bg-emerald-50/50">
+          <div className="flex items-start gap-3">
+            <FaMagic className="w-5 h-5 text-emerald-600 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-sm mb-1 text-emerald-900">Auto-Chat Mode Active</h4>
+              <p className="text-sm text-zinc-600 mb-2">
+                All enabled chatbots are having LLM-based conversations about the following topic:
+              </p>
+              <div className="bg-white/60 border border-emerald-200 rounded-md px-3 py-2">
+                <p className="text-sm font-medium text-emerald-700">
+                  &ldquo;{currentAutoChatTopic}&rdquo;
+                </p>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">
+                Regular chatbot conversations continue using their persona and knowledge base.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-chat disabled info */}
+      {chatbotAccounts.length < 2 && chatbotAccounts.length > 0 && (
+        <div className="glass-card rounded-xl p-4 border border-zinc-200 bg-zinc-50/50">
+          <div className="flex items-start gap-3">
+            <FaComments className="w-5 h-5 text-zinc-500 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-sm mb-1">Auto-Chat Unavailable</h4>
+              <p className="text-sm text-zinc-600">
+                Auto-chat requires at least 2 enabled chatbots. Add more chatbots to enable this feature.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chatbot Cards Grid */}
+      {chatbotAccounts.length === 0 ? (
+        <div className="glass-card rounded-xl p-12 text-center border border-zinc-200">
+          <FaRobot className="w-16 h-16 mx-auto mb-4 text-zinc-300" />
+          <h3 className="text-xl font-semibold mb-2 text-zinc-900">No Chatbots Configured</h3>
+          <p className="text-zinc-600 mb-4">
+            Create a chatbot to automatically respond to incoming WhatsApp messages
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            disabled={availableWhatsappAccounts.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50"
+          >
+            <FaPlus size={16} />
+            Add Chatbot
+          </button>
+          {availableWhatsappAccounts.length === 0 && whatsappAccounts.length > 0 && (
+            <p className="text-sm text-zinc-500 mt-2">
+              All WhatsApp accounts already have chatbots configured
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="w-full space-y-6">
+          {chatbotAccounts.map(chatbot => (
+            <ChatbotCard
+              key={chatbot._id}
+              chatbot={chatbot}
+              isToggling={togglingChatbotId === chatbot._id}
+              onToggle={() => handleToggleChatbot(chatbot._id)}
+              onDelete={() => handleDeleteChatbot(chatbot._id)}
+              onPersona={() => {
+                setSelectedChatbot(chatbot);
+                setPersonaValue(chatbot.persona);
+                setShowPersonaModal(true);
+              }}
+              onKnowledgeBase={() => {
+                setSelectedChatbot(chatbot);
+                setShowKBModal(true);
+              }}
+              onStaticTemplates={() => {
+                setSelectedChatbot(chatbot);
+                setStaticTemplatesValue(chatbot.staticTemplates || '{}');
+                setShowStaticTemplatesModal(true);
+              }}
+              onToggleAutoChatExclusion={handleToggleAutoChatExclusion}
+              onToggleStaticTemplates={handleToggleStaticTemplates}
+              onToggleLeadKeywords={handleToggleLeadKeywords}
+              onToggleFollowUpKeywords={handleToggleFollowUpKeywords}
+              onSaveLeadKeywords={handleSaveLeadKeywords}
+              onSaveFollowUpKeywords={handleSaveFollowUpKeywords}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Add Chatbot Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-md border border-zinc-200">
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4 flex items-center gap-2">
+              <FaRobot size={20} />
+              Add Chatbot
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">Link a chatbot to a WhatsApp number</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">WhatsApp Account</label>
+                <select
+                  value={selectedInstanceId}
+                  onChange={(e) => setSelectedInstanceId(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                >
+                  <option value="">Select WhatsApp account</option>
+                  {availableWhatsappAccounts.map(wa => (
+                    <option key={wa._id} value={wa._id}>
+                      {wa.phoneNumber} - {wa.accountName}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Select a WhatsApp account to enable AI chatbot auto-reply
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddChatbot}
+                  disabled={addingChatbot}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {addingChatbot ? (
+                    <>
+                      <FaSpinner className="animate-spin" size={14} />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Chatbot'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* System Prompt Modal */}
+      {showSystemPromptModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-2xl border border-zinc-200 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4 flex items-center gap-2">
+              <FaCog size={20} />
+              System Prompt - {selectedChatbot.phoneNumber}
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">Define how the chatbot should behave and respond</p>
+            <textarea
+              placeholder="You are a helpful assistant for..."
+              value={systemPromptValue}
+              onChange={(e) => setSystemPromptValue(e.target.value)}
+              rows={10}
+              className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+            />
+            <p className="text-xs text-zinc-500 mt-2">
+              Example: You are a helpful real estate assistant. Your job is to answer questions about properties, pricing, and schedule site visits.
+            </p>
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => setShowSystemPromptModal(false)}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveSystemPrompt}
+                disabled={savingSystemPrompt}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingSystemPrompt ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    Saving...
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Persona Modal */}
+      {showPersonaModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-2xl border border-zinc-200 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4 flex items-center gap-2">
+              <FaUser size={20} />
+              Persona - {selectedChatbot.phoneNumber}
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">Define the chatbot&apos;s personality and tone</p>
+            <textarea
+              placeholder="Friendly and professional..."
+              value={personaValue}
+              onChange={(e) => setPersonaValue(e.target.value)}
+              rows={8}
+              className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+            />
+            <p className="text-xs text-zinc-500 mt-2">
+              Example: Speak in a friendly, professional tone. Use Hindi-English mix when appropriate. Keep responses concise but helpful.
+            </p>
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => setShowPersonaModal(false)}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePersona}
+                disabled={savingPersona}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingPersona ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    Saving...
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Static Templates Modal */}
+      {showStaticTemplatesModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-3xl border border-zinc-200 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4 flex items-center gap-2">
+              <FaFileAlt size={20} />
+              Static Templates - {selectedChatbot.phoneNumber}
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">Define exact responses for common queries (JSON format)</p>
+            <textarea
+              placeholder='{\n  "hi|hello|hey": "Hi {customerName}! How can I help you?",\n  "pricing|cost": "Let me share our pricing..."\n}'
+              value={staticTemplatesValue}
+              onChange={(e) => setStaticTemplatesValue(e.target.value)}
+              rows={15}
+              className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none font-mono text-sm"
+            />
+            <div className="text-xs text-zinc-500 mt-3 space-y-2">
+              <p><strong>Format:</strong> JSON object with keyword patterns as keys</p>
+              <p><strong>Keywords:</strong> Use | (pipe) to separate multiple triggers</p>
+              <p><strong>Placeholders:</strong> Use {'{customerName}'} for personalization</p>
+              <p><strong>Formatting:</strong> Use \n for line breaks, *text* for bold</p>
+            </div>
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => setShowStaticTemplatesModal(false)}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveStaticTemplates}
+                disabled={savingStaticTemplates}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingStaticTemplates ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    Saving...
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Knowledge Base Modal */}
+      {showKBModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-2xl border border-zinc-200 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4 flex items-center gap-2">
+              <FaFileAlt size={20} />
+              Knowledge Base - {selectedChatbot.phoneNumber}
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">Upload documents to train your chatbot</p>
+
+            {/* Uploaded Files List */}
+            {selectedChatbot.knowledgeFiles && selectedChatbot.knowledgeFiles.length > 0 && (
+              <div className="mb-4 space-y-2">
+                <label className="block text-sm font-medium text-zinc-700">Uploaded Files</label>
+                <div className="border border-zinc-200 rounded-lg divide-y divide-zinc-200 max-h-60 overflow-y-auto">
+                  {selectedChatbot.knowledgeFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-3">
+                      <div className="flex items-center gap-3">
+                        <FaFileAlt className="w-5 h-5 text-zinc-400" />
+                        <div>
+                          <p className="text-sm font-medium text-zinc-900">{file.filename}</p>
+                          <p className="text-xs text-zinc-500">
+                            {formatFileSize(file.fileSize)} - {file.totalChunks} chunks
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          file.status === 'ready' ? 'bg-emerald-100 text-emerald-700' :
+                          file.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {file.status === 'processing' && <FaSpinner className="inline animate-spin mr-1" size={10} />}
+                          {file.status}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteFile(file.filename)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <FaTrash size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Upload Area */}
+            <div className="border-2 border-dashed border-zinc-300 rounded-lg p-8 text-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.docx"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <FaUpload className="w-10 h-10 mx-auto mb-3 text-zinc-400" />
+              <p className="text-sm mb-2 text-zinc-600">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingFile}
+                  className="text-emerald-600 hover:underline font-medium disabled:opacity-50"
+                >
+                  Click to upload
+                </button>
+                {' '}or drag and drop
+              </p>
+              <p className="text-xs text-zinc-500">
+                PDF, TXT, DOCX (Max 50MB per file)
+              </p>
+              {uploadingFile && (
+                <div className="flex items-center justify-center gap-2 mt-4">
+                  <FaSpinner className="animate-spin text-emerald-600" size={16} />
+                  <span className="text-sm text-zinc-600">Uploading...</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => setShowKBModal(false)}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-md border border-zinc-200">
+            <h2 className="text-xl font-semibold text-red-600 mb-4 flex items-center gap-2">
+              <FaTrash size={20} />
+              Delete Chatbot
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">
+              Are you sure you want to delete this chatbot? This will permanently delete all knowledge base files and conversation history. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeletingChatbotId(null);
+                }}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteChatbot}
+                disabled={deletingChatbot}
+                className="flex-1 px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deletingChatbot ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <FaTrash size={14} />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Chat Topic Dialog */}
+      {showAutoChatDialog && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-md border border-zinc-200">
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4 flex items-center gap-2">
+              <FaMagic size={20} className="text-emerald-600" />
+              Start Auto-Chat
+            </h2>
+            <p className="text-sm text-zinc-600 mb-4">
+              Enter a topic for chatbots to discuss. All enabled chatbots will have LLM-based conversations about this topic.
+            </p>
+            <textarea
+              placeholder="e.g., Dhurandhar movie - each scene and character analysis"
+              value={autoChatTopic}
+              onChange={(e) => setAutoChatTopic(e.target.value)}
+              rows={4}
+              className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none mb-4"
+            />
+            <p className="text-xs text-zinc-500 mb-4">
+              This is for testing/automation only. Regular chatbot conversations will continue using their persona and knowledge base.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setShowAutoChatDialog(false);
+                  setAutoChatTopic('');
+                }}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStartAutoChat}
+                disabled={autoChatLoading || !autoChatTopic.trim()}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-medium rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {autoChatLoading ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <FaComments size={14} />
+                    Start Chat
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Chatbot Card Component
+function ChatbotCard({
+  chatbot,
+  isToggling,
+  onToggle,
+  onDelete,
+  onPersona,
+  onKnowledgeBase,
+  onStaticTemplates,
+  onToggleAutoChatExclusion,
+  onToggleStaticTemplates,
+  onToggleLeadKeywords,
+  onToggleFollowUpKeywords,
+  onSaveLeadKeywords,
+  onSaveFollowUpKeywords,
+}) {
+  const readyFiles = (chatbot.knowledgeFiles || []).filter(f => f.status === 'ready').length;
+  const totalChunks = (chatbot.knowledgeFiles || []).reduce((sum, f) => sum + (f.totalChunks || 0), 0);
+
+  const [leadKeywordsInput, setLeadKeywordsInput] = useState(chatbot.leadKeywords?.join(', ') || '');
+  const [followUpKeywordsInput, setFollowUpKeywordsInput] = useState(chatbot.followUpKeywords?.join(', ') || '');
+
+  return (
+    <div className={`glass-card rounded-xl p-6 border-2 transition-all w-full ${
+      chatbot.enabled ? 'border-emerald-400 bg-emerald-50/30' : 'border-zinc-200'
+    }`}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-zinc-200">
+        <div className="flex items-center gap-4">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+            chatbot.enabled ? 'bg-emerald-100' : 'bg-zinc-100'
+          }`}>
+            <FaRobot className={`w-6 h-6 ${chatbot.enabled ? 'text-emerald-600' : 'text-zinc-400'}`} />
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-zinc-900">{chatbot.phoneNumber}</p>
+            <p className="text-sm text-zinc-500">{'gpt-4o-mini'}</p>
+          </div>
+        </div>
+        <div className="relative flex items-center gap-3">
+          <span className={`text-sm font-medium ${chatbot.enabled ? 'text-emerald-600' : 'text-zinc-500'}`}>
+            {chatbot.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+          <button
+            onClick={onToggle}
+            disabled={isToggling}
+            className={`relative w-14 h-7 rounded-full transition-colors ${
+              chatbot.enabled ? 'bg-emerald-500' : 'bg-zinc-300'
+            } ${isToggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${
+              chatbot.enabled ? 'transform translate-x-7' : ''
+            }`} />
+          </button>
+          {isToggling && (
+            <div className="absolute right-0 flex items-center justify-center pointer-events-none">
+              <FaSpinner className="animate-spin text-emerald-600" size={16} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column - Stats & Actions */}
+        <div className="space-y-4">
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-zinc-50 rounded-lg p-4 text-center border border-zinc-200">
+              <p className="text-2xl font-bold text-zinc-900">{readyFiles}</p>
+              <p className="text-sm text-zinc-500 mt-1">Files</p>
+            </div>
+            <div className="bg-zinc-50 rounded-lg p-4 text-center border border-zinc-200">
+              <p className="text-2xl font-bold text-zinc-900">{totalChunks}</p>
+              <p className="text-sm text-zinc-500 mt-1">Chunks</p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-2">
+            <button
+              onClick={onPersona}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <FaUser size={14} />
+              Persona
+            </button>
+            <button
+              onClick={onKnowledgeBase}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <FaFileAlt size={14} />
+              Knowledge Base
+            </button>
+            <button
+              onClick={onStaticTemplates}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <FaFileAlt size={14} />
+              Static Templates
+            </button>
+          </div>
+        </div>
+
+        {/* Middle Column - Toggles */}
+        <div className="space-y-4">
+
+          {/* Static Templates Toggle */}
+          <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+            <div className="flex items-center gap-3">
+              <FaFileAlt className="w-5 h-5 text-zinc-500" />
+              <div>
+                <span className="text-sm font-medium text-zinc-900 block">Use Static Templates</span>
+                {chatbot.useStaticTemplates && (
+                  <span className="text-xs text-blue-600">Fast keyword matching enabled</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => onToggleStaticTemplates(chatbot._id, !chatbot.useStaticTemplates)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                chatbot.useStaticTemplates ? 'bg-emerald-500' : 'bg-zinc-300'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                chatbot.useStaticTemplates ? 'transform translate-x-6' : ''
+              }`} />
+            </button>
+          </div>
+
+          {/* Auto-Chat Exclusion Toggle */}
+          <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+            <div className="flex items-center gap-3">
+              <FaComments className="w-5 h-5 text-zinc-500" />
+              <div>
+                <span className="text-sm font-medium text-zinc-900 block">Exclude from Auto-Chat</span>
+                {chatbot.excludeFromAutoChat && (
+                  <span className="text-xs text-zinc-500">Using KB persona RAG during autochat</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => onToggleAutoChatExclusion(chatbot._id, !chatbot.excludeFromAutoChat)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                chatbot.excludeFromAutoChat ? 'bg-emerald-500' : 'bg-zinc-300'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                chatbot.excludeFromAutoChat ? 'transform translate-x-6' : ''
+              }`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Right Column - Keywords */}
+        <div className="space-y-4">
+
+          {/* Lead Keywords Toggle */}
+          <div>
+            <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200 mb-3">
+              <div className="flex items-center gap-3">
+                <FaUser className="w-5 h-5 text-zinc-500" />
+                <span className="text-sm font-medium text-zinc-900">Lead Keyword Capture</span>
+              </div>
+              <button
+                onClick={() => onToggleLeadKeywords(chatbot._id, !chatbot.leadKeywordsEnabled)}
+                className={`relative w-12 h-6 rounded-full transition-colors ${
+                  chatbot.leadKeywordsEnabled ? 'bg-emerald-500' : 'bg-zinc-300'
+                }`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                  chatbot.leadKeywordsEnabled ? 'transform translate-x-6' : ''
+                }`} />
+              </button>
+            </div>
+            {chatbot.leadKeywordsEnabled && (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  placeholder="interested, pricing, quote, demo"
+                  value={leadKeywordsInput}
+                  onChange={(e) => setLeadKeywordsInput(e.target.value)}
+                  onBlur={() => {
+                    const keywords = leadKeywordsInput
+                      .split(',')
+                      .map(k => k.trim())
+                      .filter(k => k.length > 0);
+                    onSaveLeadKeywords(chatbot._id, keywords);
+                  }}
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-zinc-500 px-1">
+                  Keywords that indicate customer interest (comma-separated)
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Follow-up Keywords Toggle */}
+          <div>
+            <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200 mb-3">
+              <div className="flex items-center gap-3">
+                <FaRedo className="w-5 h-5 text-zinc-500" />
+                <span className="text-sm font-medium text-zinc-900">Follow-up Keyword Capture</span>
+              </div>
+              <button
+                onClick={() => onToggleFollowUpKeywords(chatbot._id, !chatbot.followUpKeywordsEnabled)}
+                className={`relative w-12 h-6 rounded-full transition-colors ${
+                  chatbot.followUpKeywordsEnabled ? 'bg-emerald-500' : 'bg-zinc-300'
+                }`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                  chatbot.followUpKeywordsEnabled ? 'transform translate-x-6' : ''
+                }`} />
+              </button>
+            </div>
+            {chatbot.followUpKeywordsEnabled && (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  placeholder="callback, later, tomorrow, busy"
+                  value={followUpKeywordsInput}
+                  onChange={(e) => setFollowUpKeywordsInput(e.target.value)}
+                  onBlur={() => {
+                    const keywords = followUpKeywordsInput
+                      .split(',')
+                      .map(k => k.trim())
+                      .filter(k => k.length > 0);
+                    onSaveFollowUpKeywords(chatbot._id, keywords);
+                  }}
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-zinc-500 px-1">
+                  Keywords that indicate customer needs follow-up (comma-separated)
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Delete Button */}
+      <div className="flex justify-end pt-4 mt-4 border-t border-zinc-200">
+        <button
+          onClick={onDelete}
+          className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium border border-red-200"
+        >
+          <FaTrash size={14} />
+          Delete Chatbot
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default ManageChatbot;
+
