@@ -19,7 +19,7 @@ import DailySummary from './components/DailySummary';
 import CallBacks from './components/CallBacks';
 import FollowUpLeads from './components/FollowUpLeads';
 import LiveStatus from './components/LiveStatus';
-import CreditHistory from './components/CreditHistory';
+// import CreditHistory from './components/CreditHistory';
 import DeliveryReports from './components/DeliveryReport';
 import CampaignReportDetail from './components/CampaignReportDetail';
 import OnlineSession from './components/OnlineSession';
@@ -176,7 +176,6 @@ function App() {
             <Route path="/call-backs" element={<CallBacks />} />
             <Route path="/follow-up" element={<FollowUpLeads />} />
             <Route path="/live-status" element={<LiveStatus />} />
-            <Route path="/credit-history" element={<CreditHistory />} />
             <Route path="/delivery-reports" element={<DeliveryReports />} />
             <Route path="/campaign-report/:campaignId" element={<CampaignReportDetail />} />
             <Route path="/settings" element={<Settings />} />

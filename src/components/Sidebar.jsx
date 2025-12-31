@@ -121,7 +121,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
 
       { key: 'chat-summary', path: '/chat-summary', icon: FaComments, label: 'Chat Summary' },
       { key: 'analytics', path: '/analytics', icon: FaChartLine, label: 'Analytics' },
-      { key: 'credit-history', path: '/credit-history', icon: FaFileDownload, label: 'Credit History' },
+      // { key: 'credit-history', path: '/credit-history', icon: FaFileDownload, label: 'Credit History' },
       { key: 'send-email', path: '/send-email', icon: FaEnvelope, label: 'Send Email' },
       { key: 'whatsapp-proposals', path: '/whatsapp-proposals', icon: FaWhatsapp, label: 'WhatsApp Proposals' },
       { key: 'whatsapp-accounts', path: '/whatsapp-accounts', icon: FaMobileAlt, label: 'WhatsApp Accounts' },
