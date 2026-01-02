@@ -170,7 +170,9 @@ const ManageChatbot = () => {
   const handleToggleChatbot = async (chatbotId) => {
     setTogglingChatbotId(chatbotId);
     try {
-      const response = await api.post(`/api/chatbot-accounts/${chatbotId}/toggle`, {});
+      const response = await api.post(`/api/chatbot-accounts/${chatbotId}/toggle`, {}, {
+        timeout: 20000, // 20 second timeout
+      });
 
       setChatbotAccounts(prev =>
         prev.map(cb =>
@@ -181,7 +183,15 @@ const ManageChatbot = () => {
       toast.success(response.data.enabled ? 'Chatbot enabled' : 'Chatbot disabled');
     } catch (error) {
       console.error('Toggle error:', error);
-      toast.error(`Failed to toggle chatbot: ${error.response?.data?.error || error.message}`);
+      
+      // Check if pairing is required
+      if (error.response?.data?.requiresPairing) {
+        toast.error(error.response.data.error || 'WhatsApp not connected. Please scan QR code or enter pairing code first.');
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        toast.error('Connection timeout. Please check if WhatsApp is paired and try again.');
+      } else {
+        toast.error(`Failed to toggle chatbot: ${error.response?.data?.error || error.message}`);
+      }
     } finally {
       setTogglingChatbotId(null);
     }
@@ -526,6 +536,20 @@ const ManageChatbot = () => {
     }
   };
 
+  const handleToggleDisableFormatting = async (chatbotId, enabled) => {
+    try {
+      await api.put(`/api/chatbot-accounts/${chatbotId}`, { disableFormatting: enabled });
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === chatbotId ? { ...cb, disableFormatting: enabled } : cb
+        )
+      );
+      toast.success(enabled ? 'Simple paragraph mode enabled' : 'Structured formatting enabled');
+    } catch (error) {
+      toast.error('Failed to update formatting setting');
+    }
+  };
+
   const handleSaveLeadKeywords = async (chatbotId, keywords) => {
     try {
       await api.put(`/api/chatbot-accounts/${chatbotId}/keywords`, { leadKeywords: keywords });
@@ -768,6 +792,7 @@ const ManageChatbot = () => {
               onToggleFollowUpKeywords={handleToggleFollowUpKeywords}
               onSaveLeadKeywords={handleSaveLeadKeywords}
               onSaveFollowUpKeywords={handleSaveFollowUpKeywords}
+              onToggleDisableFormatting={handleToggleDisableFormatting}
             />
           ))}
         </div>
@@ -1171,6 +1196,7 @@ function ChatbotCard({
   onToggleFollowUpKeywords,
   onSaveLeadKeywords,
   onSaveFollowUpKeywords,
+  onToggleDisableFormatting,
 }) {
   const readyFiles = (chatbot.knowledgeFiles || []).filter(f => f.status === 'ready').length;
   const totalChunks = (chatbot.knowledgeFiles || []).reduce((sum, f) => sum + (f.totalChunks || 0), 0);
@@ -1183,7 +1209,7 @@ function ChatbotCard({
       chatbot.enabled ? 'border-emerald-400 bg-emerald-50/30' : 'border-zinc-200'
     }`}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 pb-4 border-b border-zinc-200">
+      <div className={`flex items-center justify-between ${chatbot.enabled ? 'mb-6 pb-4 border-b border-zinc-200' : ''}`}>
         <div className="flex items-center gap-4">
           <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
             chatbot.enabled ? 'bg-emerald-100' : 'bg-zinc-100'
@@ -1218,8 +1244,9 @@ function ChatbotCard({
         </div>
       </div>
 
-      {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Content Grid - Only show when chatbot is enabled */}
+      {chatbot.enabled && (
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
         {/* Left Column - Stats & Actions */}
         <div className="space-y-4">
           {/* Stats */}
@@ -1305,6 +1332,31 @@ function ChatbotCard({
             >
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
                 chatbot.excludeFromAutoChat ? 'transform translate-x-6' : ''
+              }`} />
+            </button>
+          </div>
+
+          {/* Disable Formatting Toggle */}
+          <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+            <div className="flex items-center gap-3">
+              <FaBrain className="w-5 h-5 text-zinc-500" />
+              <div>
+                <span className="text-sm font-medium text-zinc-900 block">Disable Formatting</span>
+                {chatbot.disableFormatting ? (
+                  <span className="text-xs text-orange-600">Short paragraphs only, no lists</span>
+                ) : (
+                  <span className="text-xs text-zinc-500">Using bullet points & lists</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => onToggleDisableFormatting(chatbot._id, !chatbot.disableFormatting)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                chatbot.disableFormatting ? 'bg-orange-500' : 'bg-zinc-300'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                chatbot.disableFormatting ? 'transform translate-x-6' : ''
               }`} />
             </button>
           </div>
@@ -1396,9 +1448,10 @@ function ChatbotCard({
           </div>
         </div>
       </div>
+      )}
 
       {/* Delete Button */}
-      <div className="flex justify-end pt-4 mt-4 border-t border-zinc-200">
+      <div className={`flex justify-end ${chatbot.enabled ? 'pt-4 mt-4 border-t border-zinc-200' : 'mt-4'}`}>
         <button
           onClick={onDelete}
           className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium border border-red-200"
