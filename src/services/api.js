@@ -2666,6 +2666,70 @@ export const translateAPI = {
       throw error;
     }
   },
+  
+};
+
+
+// Zoho CRM API
+export const zohoAPI = {
+  // Get Zoho config (admin)
+  getZohoConfig: async (chatbotId) => {
+    try {
+      const response = await api.get(`/api/zoho/${chatbotId}/admin`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching Zoho config:', error);
+      throw error;
+    }
+  },
+
+  // Update Zoho config
+  updateZohoConfig: async (chatbotId, configData) => {
+    try {
+      const response = await api.put(`/api/zoho/${chatbotId}`, configData);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating Zoho config:', error);
+      throw error;
+    }
+  },
+
+  // Test Zoho connection
+  testConnection: async (chatbotId) => {
+    try {
+      const response = await api.post(`/api/zoho/${chatbotId}/test-connection`);
+      return response.data;
+    } catch (error) {
+      console.error('Error testing Zoho connection:', error);
+      // Extract error message from response
+      const errorMessage = error.response?.data?.error || error.message || 'Connection test failed';
+      throw new Error(errorMessage);
+    }
+  },
+
+  // Get authorization URL
+  getAuthorizationUrl: async (chatbotId, region = 'com') => {
+    try {
+      const response = await api.get(`/api/zoho/${chatbotId}/authorization-url?region=${region}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting authorization URL:', error);
+      // Extract error message from response
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to get authorization URL';
+      throw new Error(errorMessage);
+    }
+  },
+
+  // Exchange code for token
+  exchangeCodeForToken: async (chatbotId, code, region = 'com') => {
+    try {
+      const response = await api.post(`/api/zoho/${chatbotId}/exchange-code`, { code, region });
+      return response.data;
+    } catch (error) {
+      console.error('Error exchanging code for token:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;

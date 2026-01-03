@@ -125,10 +125,10 @@ const Sidebar = ({ isOpen = false, onClose }) => {
       { key: 'send-email', path: '/send-email', icon: FaEnvelope, label: 'Send Email' },
       { key: 'whatsapp-proposals', path: '/whatsapp-proposals', icon: FaWhatsapp, label: 'WhatsApp Proposals' },
       { key: 'whatsapp-accounts', path: '/whatsapp-accounts', icon: FaMobileAlt, label: 'WhatsApp Accounts' },
+      { key: 'manage-chatbot', path: '/manage-chatbot', icon: FaRobot, label: 'Manage Chatbot' },
     ];
 
     const adminItems = [
-      { key: 'manage-chatbot', path: '/manage-chatbot', icon: FaRobot, label: 'Manage Chatbot', adminOnly: true },
       { key: 'user-management', path: '/user-management', icon: FaUserShield, label: 'User Management', adminOnly: true }
     ];
 
