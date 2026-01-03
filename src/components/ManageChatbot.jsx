@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   FaSpinner, FaRobot, FaPlus, FaCog, FaUser, FaFileAlt, FaUpload, FaTrash,
   FaPowerOff, FaRedo, FaComments, FaBrain, FaTimes, FaCheck, FaToggleOn, FaToggleOff,
-  FaExclamationTriangle, FaMagic
+  FaExclamationTriangle, FaMagic, FaEye, FaEyeSlash, FaLink, FaCheckCircle
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
-import api from '../services/api';
+import api, { zohoAPI } from '../services/api';
 
 const ManageChatbot = () => {
   const navigate = useNavigate();
@@ -53,10 +53,73 @@ const ManageChatbot = () => {
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef(null);
 
+  // WhatsApp Proposal Modal
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [proposalConfig, setProposalConfig] = useState({
+    proposalEnabled: false,
+    keywordsInput: '',
+    choicePrompt: 'Which proposal should I send?',
+    confirmationPrompt: 'Would you like me to send this proposal now?',
+    templates: [],
+  });
+  const [proposalKeywordsInput, setProposalKeywordsInput] = useState('');
+  const [templateForm, setTemplateForm] = useState({
+    id: '',
+    name: '',
+    pdfUrl: '',
+    caption: '',
+    buttonText: '',
+    buttonPhone: '',
+    enabled: true,
+    fileName: '',
+  });
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
+  const [savingProposalConfig, setSavingProposalConfig] = useState(false);
+
+  // Calendly Modal
+  const [showCalendlyModal, setShowCalendlyModal] = useState(false);
+  const [calendlyConfig, setCalendlyConfig] = useState({
+    enabled: false,
+    keywordsInput: '',
+    url: '',
+    prompt: "Here’s my calendar to pick a time:",
+    disabledMessage: "Scheduling is unavailable right now.",
+  });
+  const [calendlyKeywordsInput, setCalendlyKeywordsInput] = useState('');
+  const [savingCalendlyConfig, setSavingCalendlyConfig] = useState(false);
+
   // Delete Confirmation Modal
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingChatbotId, setDeletingChatbotId] = useState(null);
   const [deletingChatbot, setDeletingChatbot] = useState(false);
+
+  // Zoho CRM Modal
+  const [showZohoModal, setShowZohoModal] = useState(false);
+  const [zohoConfig, setZohoConfig] = useState({
+    enabled: false,
+    zoho_region: 'com',
+    zoho_module: 'Leads',
+    zoho_client_id: '',
+    zoho_client_secret: '',
+    zoho_refresh_token: '',
+    capture_intent_keywords: [],
+    required_fields: ['name', 'phone', 'email'],
+    optional_fields: ['company'],
+    name_prompt_text: "Great! What's your name?",
+    phone_prompt_text: "What's your phone number?",
+    email_prompt_text: "What's your email address?",
+    company_prompt_text: "Which company are you from? (optional)",
+    success_message: "Thank you! We've saved your details. Our team will reach out soon!",
+  });
+  const [zohoIntentInput, setZohoIntentInput] = useState('');
+  const [savingZohoConfig, setSavingZohoConfig] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [showClientId, setShowClientId] = useState(false);
+  const [showClientSecret, setShowClientSecret] = useState(false);
+  const [showRefreshToken, setShowRefreshToken] = useState(false);
+  const [zohoRedirectUri, setZohoRedirectUri] = useState('');
+  const [manualAuthCode, setManualAuthCode] = useState('');
+  const [exchangingManualCode, setExchangingManualCode] = useState(false);
 
   // Check user role on mount
   useEffect(() => {
@@ -382,6 +445,415 @@ const ManageChatbot = () => {
       toast.error('Failed to save static templates');
     } finally {
       setSavingStaticTemplates(false);
+    }
+  };
+
+  // Save WhatsApp Proposal Config
+  const handleSaveProposalConfig = async () => {
+    if (!selectedChatbot) return;
+
+    // Build keywords array
+    const keywords = proposalKeywordsInput
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    // Validate templates
+    if (!proposalConfig.templates || proposalConfig.templates.length === 0) {
+      toast.error('Add at least one template');
+      return;
+    }
+    const invalidTemplate = proposalConfig.templates.find(t => !t.name || !t.pdfUrl || !/^https?:\/\//i.test(t.pdfUrl));
+    if (invalidTemplate) {
+      toast.error('Each template needs a name and a valid HTTPS PDF URL');
+      return;
+    }
+
+    setSavingProposalConfig(true);
+    try {
+      await api.put(`/api/chatbot-accounts/${selectedChatbot._id}`, {
+        proposalFlow: {
+          enabled: proposalConfig.proposalEnabled,
+          keywords,
+          choicePrompt: proposalConfig.choicePrompt,
+          confirmationPrompt: proposalConfig.confirmationPrompt,
+          templates: proposalConfig.templates,
+        },
+      });
+
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === selectedChatbot._id
+            ? {
+                ...cb,
+                proposalFlow: {
+                  enabled: proposalConfig.proposalEnabled,
+                  keywords,
+                  choicePrompt: proposalConfig.choicePrompt,
+                  confirmationPrompt: proposalConfig.confirmationPrompt,
+                  templates: proposalConfig.templates,
+                },
+              }
+            : cb
+        )
+      );
+
+      toast.success('WhatsApp proposal settings saved');
+      setShowProposalModal(false);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to save proposal settings');
+    } finally {
+      setSavingProposalConfig(false);
+    }
+  };
+
+  // Save Calendly Config
+  const handleSaveCalendlyConfig = async () => {
+    if (!selectedChatbot) return;
+
+    const keywords = calendlyKeywordsInput
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    if (calendlyConfig.enabled) {
+      if (keywords.length === 0) {
+        toast.error('Add at least one keyword');
+        return;
+      }
+      if (!calendlyConfig.url || !/^https?:\/\//i.test(calendlyConfig.url)) {
+        toast.error('Calendly link must be a valid HTTPS URL');
+        return;
+      }
+    }
+
+    setSavingCalendlyConfig(true);
+    try {
+      await api.put(`/api/chatbot-accounts/${selectedChatbot._id}`, {
+        calendly: {
+          enabled: calendlyConfig.enabled,
+          keywords,
+          url: calendlyConfig.url,
+          prompt: calendlyConfig.prompt,
+          disabledMessage: calendlyConfig.disabledMessage,
+        },
+      });
+
+      setChatbotAccounts(prev =>
+        prev.map(cb =>
+          cb._id === selectedChatbot._id
+            ? {
+                ...cb,
+                calendly: {
+                  enabled: calendlyConfig.enabled,
+                  keywords,
+                  url: calendlyConfig.url,
+                  prompt: calendlyConfig.prompt,
+                  disabledMessage: calendlyConfig.disabledMessage,
+                },
+              }
+            : cb
+        )
+      );
+
+      toast.success('Calendly intent saved');
+      setShowCalendlyModal(false);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to save Calendly intent');
+    } finally {
+      setSavingCalendlyConfig(false);
+    }
+  };
+
+  const resetTemplateForm = () => {
+    setTemplateForm({
+      id: '',
+      name: '',
+      pdfUrl: '',
+      caption: '',
+      buttonText: '',
+      buttonPhone: '',
+      enabled: true,
+    });
+    setEditingTemplateId(null);
+  };
+
+  const handleAddOrUpdateTemplate = () => {
+    if (!templateForm.name.trim() || !templateForm.pdfUrl.trim()) {
+      toast.error('Template name and PDF URL are required');
+      return;
+    }
+    if (!/^https?:\/\//i.test(templateForm.pdfUrl.trim())) {
+      toast.error('PDF URL must be a valid HTTPS link');
+      return;
+    }
+    const newTemplate = {
+      ...templateForm,
+      id: templateForm.id || editingTemplateId || `tpl_${Date.now()}`,
+      name: templateForm.name.trim(),
+      pdfUrl: templateForm.pdfUrl.trim(),
+      caption: (templateForm.caption || '').trim(),
+      buttonText: (templateForm.buttonText || '').trim(),
+      buttonPhone: (templateForm.buttonPhone || '').trim(),
+      fileName: (templateForm.fileName || '').trim(),
+    };
+
+    setProposalConfig(prev => {
+      const existing = prev.templates || [];
+      const updated = editingTemplateId
+        ? existing.map(t => (t.id === editingTemplateId ? newTemplate : t))
+        : [...existing, newTemplate];
+      return { ...prev, templates: updated };
+    });
+
+    resetTemplateForm();
+  };
+
+  const handleEditTemplate = (id) => {
+    const tpl = (proposalConfig.templates || []).find(t => t.id === id);
+    if (!tpl) return;
+    setTemplateForm(tpl);
+    setEditingTemplateId(id);
+  };
+
+  const handleToggleTemplateEnabled = (id, enabled) => {
+    setProposalConfig(prev => ({
+      ...prev,
+      templates: (prev.templates || []).map(t =>
+        t.id === id ? { ...t, enabled } : t
+      ),
+    }));
+  };
+
+  const handleDeleteTemplate = (id) => {
+    setProposalConfig(prev => ({
+      ...prev,
+      templates: (prev.templates || []).filter(t => t.id !== id),
+    }));
+    if (editingTemplateId === id) {
+      resetTemplateForm();
+    }
+  };
+
+  // Load Zoho Config
+  const loadZohoConfig = async (chatbotId) => {
+    try {
+      // Use admin endpoint to get decrypted credentials (getZohoConfig already uses /admin endpoint)
+      const response = await zohoAPI.getZohoConfig(chatbotId);
+      if (response.success && response.data) {
+        setZohoConfig({
+          enabled: response.data.enabled || false,
+          zoho_region: response.data.zoho_region || 'com',
+          zoho_module: response.data.zoho_module || 'Leads',
+          zoho_client_id: response.data.zoho_client_id || '',
+          zoho_client_secret: response.data.zoho_client_secret || '',
+          zoho_refresh_token: response.data.zoho_refresh_token || '',
+          capture_intent_keywords: response.data.capture_intent_keywords || [],
+          required_fields: response.data.required_fields || ['name', 'phone', 'email'],
+          optional_fields: response.data.optional_fields || ['company'],
+          name_prompt_text: response.data.name_prompt_text || "Great! What's your name?",
+          phone_prompt_text: response.data.phone_prompt_text || "What's your phone number?",
+          email_prompt_text: response.data.email_prompt_text || "What's your email address?",
+          company_prompt_text: response.data.company_prompt_text || "Which company are you from? (optional)",
+          success_message: response.data.success_message || "Thank you! We've saved your details. Our team will reach out soon!",
+        });
+        setZohoIntentInput((response.data.capture_intent_keywords || []).join(', '));
+      } else {
+        // Config doesn't exist, use defaults
+        setZohoConfig({
+          enabled: false,
+          zoho_region: 'com',
+          zoho_module: 'Leads',
+          zoho_client_id: '',
+          zoho_client_secret: '',
+          zoho_refresh_token: '',
+          capture_intent_keywords: [],
+          required_fields: ['name', 'phone', 'email'],
+          optional_fields: ['company'],
+          name_prompt_text: "Great! What's your name?",
+          phone_prompt_text: "What's your phone number?",
+          email_prompt_text: "What's your email address?",
+          company_prompt_text: "Which company are you from? (optional)",
+          success_message: "Thank you! We've saved your details. Our team will reach out soon!",
+        });
+        setZohoIntentInput('');
+      }
+    } catch (error) {
+      console.error('Error loading Zoho config:', error);
+      // Use defaults if error - config might not exist yet
+      setZohoConfig({
+        enabled: false,
+        zoho_region: 'com',
+        zoho_module: 'Leads',
+        zoho_client_id: '',
+        zoho_client_secret: '',
+        zoho_refresh_token: '',
+        capture_intent_keywords: [],
+        required_fields: ['name', 'phone', 'email'],
+        optional_fields: ['company'],
+        name_prompt_text: "Great! What's your name?",
+        phone_prompt_text: "What's your phone number?",
+        email_prompt_text: "What's your email address?",
+        company_prompt_text: "Which company are you from? (optional)",
+        success_message: "Thank you! We've saved your details. Our team will reach out soon!",
+      });
+      setZohoIntentInput('');
+    }
+  };
+
+  // Save Zoho Config
+  const handleSaveZohoConfig = async () => {
+    if (!selectedChatbot) return;
+
+    setSavingZohoConfig(true);
+    try {
+      await zohoAPI.updateZohoConfig(selectedChatbot._id, zohoConfig);
+      toast.success('Zoho configuration saved successfully');
+      setShowZohoModal(false);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to save Zoho configuration');
+    } finally {
+      setSavingZohoConfig(false);
+    }
+  };
+
+  // Test Zoho Connection
+  const handleTestConnection = async () => {
+    if (!selectedChatbot) return;
+
+    // Check if credentials are filled in the form
+    if (!zohoConfig.zoho_client_id || !zohoConfig.zoho_client_secret || !zohoConfig.zoho_refresh_token) {
+      toast.error('Please enter Client ID, Client Secret, and Refresh Token, then save the configuration before testing connection.');
+      return;
+    }
+
+    // Save config first to ensure it exists in database
+    try {
+      await zohoAPI.updateZohoConfig(selectedChatbot._id, zohoConfig);
+    } catch (error) {
+      toast.error('Please save the configuration first before testing connection.');
+      return;
+    }
+
+    setTestingConnection(true);
+    try {
+      const response = await zohoAPI.testConnection(selectedChatbot._id);
+      if (response.success) {
+        toast.success('Connection test successful!');
+      } else {
+        toast.error(response.error || 'Connection test failed');
+      }
+    } catch (error) {
+      const errorMessage = error.message || error.response?.data?.error || 'Connection test failed';
+      toast.error(errorMessage);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  // Generate Refresh Token
+  const handleGenerateRefreshToken = async () => {
+    if (!selectedChatbot) return;
+
+    // Check if Client ID and Secret are filled
+    if (!zohoConfig.zoho_client_id || !zohoConfig.zoho_client_secret) {
+      toast.error('Please enter Client ID and Client Secret, then save the configuration before generating refresh token.');
+      return;
+    }
+
+    // Save config first to ensure it exists in database
+    try {
+      await zohoAPI.updateZohoConfig(selectedChatbot._id, zohoConfig);
+    } catch (error) {
+      toast.error('Please save the configuration first before generating refresh token.');
+      return;
+    }
+
+    try {
+      const response = await zohoAPI.getAuthorizationUrl(selectedChatbot._id, zohoConfig.zoho_region);
+      if (response.success && response.data.authorizationUrl) {
+        // Store redirect URI for display
+        if (response.data.redirectUri) {
+          setZohoRedirectUri(response.data.redirectUri);
+        }
+        // Open popup window for OAuth
+        const width = 600;
+        const height = 700;
+        const left = (window.screen.width - width) / 2;
+        const top = (window.screen.height - height) / 2;
+        
+        const popup = window.open(
+          response.data.authorizationUrl,
+          'Zoho OAuth',
+          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+        );
+
+        // Listen for OAuth callback
+        const messageHandler = async (event) => {
+          // Log all messages for debugging
+          console.log('🔍 [Zoho OAuth] Message received:', {
+            type: event.data?.type,
+            origin: event.origin,
+            hasCode: !!event.data?.code,
+            data: event.data
+          });
+          
+          if (event.data?.type === 'zoho-oauth-callback') {
+            console.log('✅ [Zoho OAuth] Received authorization code, exchanging for token...');
+            window.removeEventListener('message', messageHandler);
+            
+            // Try to close popup, but don't fail if COOP blocks it
+            try {
+              if (popup) {
+                popup.close();
+              }
+            } catch (e) {
+              // COOP may block popup.close(), but that's okay - callback page will close itself
+              console.warn('Could not close popup (COOP restriction):', e.message);
+            }
+
+            try {
+              const response = await zohoAPI.exchangeCodeForToken(
+                selectedChatbot._id,
+                event.data.code,
+                event.data.region || zohoConfig.zoho_region
+              );
+              
+              console.log('✅ [Zoho OAuth] Token exchange successful:', response);
+              
+              if (response.success) {
+                // Update the config with the refresh token if provided
+                if (response.data?.refreshToken) {
+                  setZohoConfig(prev => ({
+                    ...prev,
+                    zoho_refresh_token: response.data.refreshToken
+                  }));
+                  toast.success('✅ Refresh token generated and saved successfully!');
+                } else {
+                  // Token was saved on backend, just reload config
+                  toast.success('✅ Refresh token generated and saved successfully!');
+                  await loadZohoConfig(selectedChatbot._id);
+                }
+              } else {
+                throw new Error(response.error || 'No refresh token in response');
+              }
+            } catch (error) {
+              console.error('❌ [Zoho OAuth] Token exchange error:', error);
+              const errorMessage = error.message || error.response?.data?.error || 'Failed to exchange code for token';
+              toast.error(errorMessage);
+            }
+          }
+        };
+
+        window.addEventListener('message', messageHandler);
+        console.log('👂 [Zoho OAuth] Message listener attached');
+
+        // Store popup reference for cleanup (don't check closed status due to COOP)
+        // The popup will close itself after sending the message
+      }
+    } catch (error) {
+      const errorMessage = error.message || error.response?.data?.error || 'Failed to generate authorization URL';
+      toast.error(errorMessage);
     }
   };
 
@@ -762,6 +1234,49 @@ const ManageChatbot = () => {
                 setStaticTemplatesValue(chatbot.staticTemplates || '{}');
                 setShowStaticTemplatesModal(true);
               }}
+              onZohoCRM={async () => {
+                setSelectedChatbot(chatbot);
+                await loadZohoConfig(chatbot._id);
+                setShowZohoModal(true);
+              }}
+              onProposal={() => {
+                setSelectedChatbot(chatbot);
+                setProposalConfig({
+                  proposalEnabled: chatbot.proposalFlow?.enabled || false,
+                  keywordsInput: (chatbot.proposalFlow?.keywords || []).join(', '),
+                  choicePrompt: chatbot.proposalFlow?.choicePrompt || 'Which proposal should I send?',
+                  confirmationPrompt: chatbot.proposalFlow?.confirmationPrompt || 'Would you like me to send this proposal now?',
+      templates: (chatbot.proposalFlow?.templates || []).map(t => ({
+        ...t,
+        fileName: t.fileName || '',
+      })),
+                });
+                setProposalKeywordsInput((chatbot.proposalFlow?.keywords || []).join(', '));
+                setTemplateForm({
+                  id: '',
+                  name: '',
+                  pdfUrl: '',
+                  caption: '',
+                  buttonText: '',
+                  buttonPhone: '',
+                  enabled: true,
+                  fileName: '',
+                });
+                setEditingTemplateId(null);
+                setShowProposalModal(true);
+              }}
+              onCalendly={() => {
+                setSelectedChatbot(chatbot);
+                setCalendlyConfig({
+                  enabled: chatbot.calendly?.enabled || false,
+                  keywordsInput: (chatbot.calendly?.keywords || []).join(', '),
+                  url: chatbot.calendly?.url || '',
+                  prompt: chatbot.calendly?.prompt || "Here’s my calendar to pick a time:",
+                  disabledMessage: chatbot.calendly?.disabledMessage || "Scheduling is unavailable right now.",
+                });
+                setCalendlyKeywordsInput((chatbot.calendly?.keywords || []).join(', '));
+                setShowCalendlyModal(true);
+              }}
               onToggleAutoChatExclusion={handleToggleAutoChatExclusion}
               onToggleStaticTemplates={handleToggleStaticTemplates}
               onToggleLeadKeywords={handleToggleLeadKeywords}
@@ -1057,6 +1572,783 @@ const ManageChatbot = () => {
         </div>
       )}
 
+      {/* Zoho CRM Configuration Modal */}
+      {showZohoModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-4xl border border-zinc-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-zinc-900 flex items-center gap-2">
+                <FaCog size={20} />
+                Zoho CRM Integration - {selectedChatbot.phoneNumber}
+              </h2>
+              <button
+                onClick={() => setShowZohoModal(false)}
+                className="p-2 hover:bg-zinc-100 rounded-lg transition-colors"
+              >
+                <FaTimes size={18} />
+              </button>
+            </div>
+
+            {/* Enable Toggle */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                <div>
+                  <span className="text-sm font-medium text-zinc-900 block">Enable Zoho Lead Capture</span>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Automatically capture leads to Zoho CRM when users show interest.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setZohoConfig({...zohoConfig, enabled: !zohoConfig.enabled})}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    zohoConfig.enabled ? 'bg-purple-500' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                    zohoConfig.enabled ? 'transform translate-x-6' : ''
+                  }`} />
+                </button>
+              </div>
+            </div>
+
+            {zohoConfig.enabled && (
+              <div className="space-y-6">
+                {/* Zoho Credentials Section */}
+                <div className="border border-zinc-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-zinc-900 mb-4">Zoho CRM Credentials</h3>
+                  
+                  {/* Redirect URI Instructions */}
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs font-medium text-blue-900 mb-2">⚠️ Important: Configure Redirect URI in Zoho</p>
+                    <p className="text-xs text-blue-700 mb-2">
+                      Before generating a refresh token, you must add this redirect URI in your Zoho Developer Console:
+                    </p>
+                    <div className="bg-white p-2 rounded border border-blue-300 mb-2">
+                      <code className="text-xs text-blue-900 break-all">
+                        {zohoRedirectUri || `${window.location.protocol === 'https:' ? 'https' : 'http'}://${window.location.hostname}:5000/api/zoho/callback`}
+                      </code>
+                    </div>
+                    <p className="text-xs text-blue-700">
+                      Go to: <a href="https://api-console.zoho.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">Zoho Developer Console</a> → Your App → Authorized Redirect URIs → Add the URL above
+                    </p>
+                    <p className="text-xs text-blue-600 mt-2 font-medium">
+                      💡 Tip: Click "Generate" button below to get the exact redirect URI for your environment
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Zoho Region</label>
+                      <select
+                        value={zohoConfig.zoho_region}
+                        onChange={(e) => setZohoConfig({...zohoConfig, zoho_region: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="com">United States (.com)</option>
+                        <option value="eu">Europe (.eu)</option>
+                        <option value="in">India (.in)</option>
+                        <option value="au">Australia (.com.au)</option>
+                        <option value="jp">Japan (.jp)</option>
+                        <option value="ca">Canada (.ca)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Zoho Module</label>
+                      <select
+                        value={zohoConfig.zoho_module}
+                        onChange={(e) => setZohoConfig({...zohoConfig, zoho_module: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="Leads">Leads</option>
+                        <option value="Contacts">Contacts</option>
+                        <option value="Deals">Deals</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Client ID</label>
+                      <div className="relative">
+                        <input
+                          type={showClientId ? 'text' : 'password'}
+                          value={zohoConfig.zoho_client_id}
+                          onChange={(e) => setZohoConfig({...zohoConfig, zoho_client_id: e.target.value})}
+                          placeholder="Enter Zoho Client ID"
+                          className="w-full px-4 py-2 pr-10 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowClientId(!showClientId)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-500 hover:text-zinc-700"
+                        >
+                          {showClientId ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Client Secret</label>
+                      <div className="relative">
+                        <input
+                          type={showClientSecret ? 'text' : 'password'}
+                          value={zohoConfig.zoho_client_secret}
+                          onChange={(e) => setZohoConfig({...zohoConfig, zoho_client_secret: e.target.value})}
+                          placeholder="Enter Zoho Client Secret"
+                          className="w-full px-4 py-2 pr-10 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowClientSecret(!showClientSecret)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-500 hover:text-zinc-700"
+                        >
+                          {showClientSecret ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Refresh Token</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type={showRefreshToken ? 'text' : 'password'}
+                            value={zohoConfig.zoho_refresh_token}
+                            onChange={(e) => setZohoConfig({...zohoConfig, zoho_refresh_token: e.target.value})}
+                            placeholder="Enter Zoho Refresh Token"
+                            className="w-full px-4 py-2 pr-10 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowRefreshToken(!showRefreshToken)}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-500 hover:text-zinc-700"
+                          >
+                            {showRefreshToken ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
+                          </button>
+                        </div>
+                        <button
+                          onClick={handleGenerateRefreshToken}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center gap-2"
+                        >
+                          <FaLink size={14} />
+                          Generate
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        <a href="https://api-console.zoho.com" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline">
+                          or get from Zoho Developer Console
+                        </a>
+                      </p>
+                    </div>
+
+                    {/* Manual Code Exchange */}
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs font-medium text-blue-900 mb-2">
+                        <strong>Manual Exchange:</strong> If the automatic flow didn't work, copy the authorization code from the callback page and paste it here:
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={manualAuthCode}
+                          onChange={(e) => setManualAuthCode(e.target.value)}
+                          placeholder="Paste authorization code here"
+                          className="flex-1 px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          onClick={async () => {
+                            if (!selectedChatbot) return;
+                            if (!manualAuthCode.trim()) {
+                              toast.error('Please enter the authorization code');
+                              return;
+                            }
+                            setExchangingManualCode(true);
+                            try {
+                              const response = await zohoAPI.exchangeCodeForToken(
+                                selectedChatbot._id,
+                                manualAuthCode.trim(),
+                                zohoConfig.zoho_region
+                              );
+                              if (response.success && response.data?.refreshToken) {
+                                setZohoConfig(prev => ({
+                                  ...prev,
+                                  zoho_refresh_token: response.data.refreshToken
+                                }));
+                                setManualAuthCode('');
+                                toast.success('✅ Refresh token generated successfully!');
+                              } else {
+                                throw new Error('No refresh token in response');
+                              }
+                            } catch (error) {
+                              const errorMessage = error.message || error.response?.data?.error || 'Failed to exchange code';
+                              toast.error(errorMessage);
+                            } finally {
+                              setExchangingManualCode(false);
+                            }
+                          }}
+                          disabled={exchangingManualCode || !manualAuthCode.trim()}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm font-medium flex items-center gap-2"
+                        >
+                          {exchangingManualCode ? (
+                            <>
+                              <FaSpinner className="animate-spin" size={14} />
+                              Exchanging...
+                            </>
+                          ) : (
+                            <>
+                              <FaLink size={14} />
+                              Exchange Code
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleTestConnection}
+                      disabled={testingConnection}
+                      className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {testingConnection ? (
+                        <>
+                          <FaSpinner className="animate-spin" size={14} />
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <FaCheckCircle size={14} />
+                          Test Connection
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lead Capture Settings */}
+                <div className="border border-zinc-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-zinc-900 mb-4">Lead Capture Settings</h3>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Intent Keywords</label>
+                    <p className="text-xs text-zinc-500 mb-2">
+                      Add keywords that trigger lead capture (e.g., "interested", "want to buy", "get quote")
+                    </p>
+                    <input
+                      type="text"
+                      value={zohoIntentInput}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setZohoIntentInput(value);
+                        const keywords = value.split(',').map(k => k.trim()).filter(k => k);
+                        setZohoConfig({...zohoConfig, capture_intent_keywords: keywords});
+                      }}
+                      placeholder="Enter keyword (e.g., interested)"
+                      className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <p className="text-xs text-zinc-500 mt-1">
+                      {zohoConfig.capture_intent_keywords.length === 0 ? 'No keywords added yet' : `${zohoConfig.capture_intent_keywords.length} keyword(s) added`}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Required Fields</label>
+                      <div className="space-y-2">
+                        {['name', 'phone', 'email', 'company'].map(field => (
+                          <label key={field} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={zohoConfig.required_fields.includes(field)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setZohoConfig({
+                                    ...zohoConfig,
+                                    required_fields: [...zohoConfig.required_fields, field],
+                                    optional_fields: zohoConfig.optional_fields.filter(f => f !== field)
+                                  });
+                                } else {
+                                  setZohoConfig({
+                                    ...zohoConfig,
+                                    required_fields: zohoConfig.required_fields.filter(f => f !== field)
+                                  });
+                                }
+                              }}
+                              className="rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <span className="text-sm text-zinc-700 capitalize">{field}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Optional Fields</label>
+                      <div className="space-y-2">
+                        {['name', 'phone', 'email', 'company'].map(field => (
+                          <label key={field} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={zohoConfig.optional_fields.includes(field)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setZohoConfig({
+                                    ...zohoConfig,
+                                    optional_fields: [...zohoConfig.optional_fields, field],
+                                    required_fields: zohoConfig.required_fields.filter(f => f !== field)
+                                  });
+                                } else {
+                                  setZohoConfig({
+                                    ...zohoConfig,
+                                    optional_fields: zohoConfig.optional_fields.filter(f => f !== field)
+                                  });
+                                }
+                              }}
+                              className="rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <span className="text-sm text-zinc-700 capitalize">{field}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Field Prompts */}
+                <div className="border border-zinc-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-zinc-900 mb-4">Field Prompts</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Name Prompt</label>
+                      <input
+                        type="text"
+                        value={zohoConfig.name_prompt_text}
+                        onChange={(e) => setZohoConfig({...zohoConfig, name_prompt_text: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Phone Prompt</label>
+                      <input
+                        type="text"
+                        value={zohoConfig.phone_prompt_text}
+                        onChange={(e) => setZohoConfig({...zohoConfig, phone_prompt_text: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Email Prompt</label>
+                      <input
+                        type="text"
+                        value={zohoConfig.email_prompt_text}
+                        onChange={(e) => setZohoConfig({...zohoConfig, email_prompt_text: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Company Prompt</label>
+                      <input
+                        type="text"
+                        value={zohoConfig.company_prompt_text}
+                        onChange={(e) => setZohoConfig({...zohoConfig, company_prompt_text: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Success Message</label>
+                      <textarea
+                        value={zohoConfig.success_message}
+                        onChange={(e) => setZohoConfig({...zohoConfig, success_message: e.target.value})}
+                        rows={3}
+                        className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4 border-t border-zinc-200">
+                  <button
+                    onClick={() => setShowZohoModal(false)}
+                    className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveZohoConfig}
+                    disabled={savingZohoConfig}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-medium rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingZohoConfig ? (
+                      <>
+                        <FaSpinner className="animate-spin" size={14} />
+                        Saving...
+                      </>
+                    ) : (
+                      'Update Zoho Configuration'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Proposal Modal */}
+      {showProposalModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-3xl border border-zinc-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-zinc-900 flex items-center gap-2">
+                <FaFileAlt size={18} />
+                WhatsApp Proposal - {selectedChatbot.phoneNumber}
+              </h2>
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="p-2 hover:bg-zinc-100 rounded-lg transition-colors"
+              >
+                <FaTimes size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              {/* Enable toggle */}
+              <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                <div>
+                  <span className="text-sm font-medium text-zinc-900 block">Enable WhatsApp Proposal</span>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    When proposal keywords are detected, start the proposal flow (choice → confirm → send PDF).
+                  </p>
+                </div>
+                <button
+                  onClick={() => setProposalConfig(prev => ({ ...prev, proposalEnabled: !prev.proposalEnabled }))}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    proposalConfig.proposalEnabled ? 'bg-emerald-500' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                      proposalConfig.proposalEnabled ? 'transform translate-x-6' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Keywords */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Proposal Keywords / Intents</label>
+                <input
+                  type="text"
+                  value={proposalKeywordsInput}
+                  onChange={(e) => setProposalKeywordsInput(e.target.value)}
+                  placeholder="send proposal, proposal, pdf, whatsapp proposal"
+                  className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-xs text-zinc-500 mt-1">Comma-separated; when matched, the flow starts.</p>
+              </div>
+
+              {/* Prompts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Template Choice Prompt</label>
+                  <input
+                    type="text"
+                    value={proposalConfig.choicePrompt}
+                    onChange={(e) => setProposalConfig(prev => ({ ...prev, choicePrompt: e.target.value }))}
+                    placeholder="Which proposal should I send?"
+                    className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Confirmation Prompt</label>
+                  <input
+                    type="text"
+                    value={proposalConfig.confirmationPrompt}
+                    onChange={(e) => setProposalConfig(prev => ({ ...prev, confirmationPrompt: e.target.value }))}
+                    placeholder="Should I send this proposal now?"
+                    className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Templates list */}
+              <div className="border border-zinc-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">Templates</p>
+                    <p className="text-xs text-zinc-500">Add multiple proposals; user will choose if more than one is enabled.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {(proposalConfig.templates || []).length === 0 && (
+                    <p className="text-sm text-zinc-500">No templates yet. Add one below.</p>
+                  )}
+
+                  {(proposalConfig.templates || []).map((tpl, idx) => (
+                    <div
+                      key={tpl.id || idx}
+                      className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 border border-zinc-200 rounded-lg bg-zinc-50"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                          {tpl.name}
+                          <span className="text-xs px-2 py-0.5 rounded-full border">
+                            {tpl.enabled ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </p>
+                        <p className="text-xs text-zinc-500 break-all">{tpl.pdfUrl}</p>
+                        {tpl.fileName ? <p className="text-xs text-zinc-500">File name: {tpl.fileName}</p> : null}
+                        {tpl.caption && <p className="text-xs text-zinc-500">Caption: {tpl.caption}</p>}
+                        {tpl.buttonPhone && (
+                          <p className="text-xs text-zinc-500">CTA: {tpl.buttonText || 'Call Now'} → {tpl.buttonPhone}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleTemplateEnabled(tpl.id, !tpl.enabled)}
+                          className={`px-3 py-1 text-xs rounded-lg border ${
+                            tpl.enabled ? 'border-emerald-300 text-emerald-700' : 'border-zinc-300 text-zinc-600'
+                          }`}
+                        >
+                          {tpl.enabled ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          onClick={() => handleEditTemplate(tpl.id)}
+                          className="px-3 py-1 text-xs rounded-lg border border-blue-300 text-blue-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTemplate(tpl.id)}
+                          className="px-3 py-1 text-xs rounded-lg border border-red-300 text-red-600"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Template form */}
+                <div className="border-t border-zinc-200 pt-3 space-y-3">
+                  <p className="text-sm font-semibold text-zinc-900">{editingTemplateId ? 'Edit Template' : 'Add Template'}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={templateForm.name}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Proposal - Product A"
+                        className="w-full px-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">PDF URL</label>
+                      <input
+                        type="url"
+                        value={templateForm.pdfUrl}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, pdfUrl: e.target.value }))}
+                        placeholder="https://example.com/proposal.pdf"
+                        className="w-full px-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm"
+                      />
+                    </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1">File Name (optional)</label>
+                  <input
+                    type="text"
+                    value={templateForm.fileName}
+                    onChange={(e) => setTemplateForm(prev => ({ ...prev, fileName: e.target.value }))}
+                    placeholder="Proposal-Swara.pdf"
+                    className="w-full px-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm"
+                  />
+                  <p className="text-xs text-zinc-500">If empty, the name will be derived from the URL.</p>
+                </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">Caption / Body</label>
+                      <textarea
+                        value={templateForm.caption}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, caption: e.target.value }))}
+                        rows={3}
+                        placeholder="Dear Customer, please check the attached proposal..."
+                        className="w-full px-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">Button Text (optional)</label>
+                      <input
+                        type="text"
+                        value={templateForm.buttonText}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, buttonText: e.target.value }))}
+                        placeholder="Call Now"
+                        className="w-full px-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">Button Phone (tel:)</label>
+                      <input
+                        type="text"
+                        value={templateForm.buttonPhone}
+                        onChange={(e) => setTemplateForm(prev => ({ ...prev, buttonPhone: e.target.value }))}
+                        placeholder="+91XXXXXXXXXX"
+                        className="w-full px-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleAddOrUpdateTemplate}
+                      className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors"
+                    >
+                      {editingTemplateId ? 'Update Template' : 'Add Template'}
+                    </button>
+                    {editingTemplateId && (
+                      <button
+                        onClick={resetTemplateForm}
+                        className="px-4 py-2 bg-zinc-100 text-sm rounded-lg border border-zinc-200"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-emerald-100 bg-emerald-50 rounded-lg p-3 text-xs text-emerald-700">
+                Uses the proposal keywords to trigger; if multiple templates are enabled, the user is asked to choose, then to confirm; on confirm, the selected PDF is sent as a document with your caption and optional call button.
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-6">
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveProposalConfig}
+                disabled={savingProposalConfig}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingProposalConfig ? (
+                  <>
+                    <FaSpinner className="animate-spin" size={14} />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Proposal Settings'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Calendly Intent Modal */}
+      {showCalendlyModal && selectedChatbot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-3xl border border-zinc-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-zinc-900 flex items-center gap-2">
+                <FaLink size={18} />
+                Calendly Intent - {selectedChatbot.phoneNumber}
+              </h2>
+              <button
+                onClick={() => setShowCalendlyModal(false)}
+                className="p-2 hover:bg-zinc-100 rounded-lg transition-colors"
+              >
+                <FaTimes size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              {/* Enable toggle */}
+              <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                <div>
+                  <span className="text-sm font-medium text-zinc-900 block">Enable Calendly Intent</span>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    When these keywords are detected, the bot replies with your Calendly link.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setCalendlyConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    calendlyConfig.enabled ? 'bg-emerald-500' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                      calendlyConfig.enabled ? 'transform translate-x-6' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Calendly Keywords / Intents</label>
+                  <input
+                    type="text"
+                    value={calendlyKeywordsInput}
+                    onChange={(e) => setCalendlyKeywordsInput(e.target.value)}
+                    placeholder="schedule, meeting, book call, calendly"
+                    className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">Comma-separated; when matched, the link is sent.</p>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Calendly Link</label>
+                  <input
+                    type="url"
+                    value={calendlyConfig.url}
+                    onChange={(e) => setCalendlyConfig(prev => ({ ...prev, url: e.target.value }))}
+                    placeholder="https://calendly.com/your-link"
+                    className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Prompt (before link)</label>
+                  <input
+                    type="text"
+                    value={calendlyConfig.prompt}
+                    onChange={(e) => setCalendlyConfig(prev => ({ ...prev, prompt: e.target.value }))}
+                    placeholder="Here’s my calendar to pick a time:"
+                    className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Disabled Message (optional)</label>
+                  <input
+                    type="text"
+                    value={calendlyConfig.disabledMessage}
+                    onChange={(e) => setCalendlyConfig(prev => ({ ...prev, disabledMessage: e.target.value }))}
+                    placeholder="Scheduling is unavailable right now."
+                    className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowCalendlyModal(false)}
+                  className="px-4 py-2 text-sm rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCalendlyConfig}
+                  disabled={savingCalendlyConfig}
+                  className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-60"
+                >
+                  {savingCalendlyConfig ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -1165,6 +2457,9 @@ function ChatbotCard({
   onPersona,
   onKnowledgeBase,
   onStaticTemplates,
+  onZohoCRM = () => {},
+  onProposal = () => {},
+  onCalendly = () => {},
   onToggleAutoChatExclusion,
   onToggleStaticTemplates,
   onToggleLeadKeywords,
@@ -1256,6 +2551,27 @@ function ChatbotCard({
             >
               <FaFileAlt size={14} />
               Static Templates
+            </button>
+            <button
+              onClick={onZohoCRM}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <FaCog size={14} />
+              Zoho CRM
+            </button>
+            <button
+              onClick={onProposal}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <FaFileAlt size={14} />
+              WhatsApp Proposal
+            </button>
+            <button
+              onClick={onCalendly}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <FaLink size={14} />
+              Calendly Intent
             </button>
           </div>
         </div>

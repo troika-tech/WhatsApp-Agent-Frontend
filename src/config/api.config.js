@@ -4,7 +4,7 @@
 // To switch backends, simply change the BACKEND_MODE value below
 // Options: 'NEW', 'OLD', 'LOCALHOST', 'BACKEND_WORKER', 'PRODUCTION'
 // Using PRODUCTION for live deployment
-const BACKEND_MODE = 'PRODUCTION'; // Set to 'PRODUCTION' for live, 'BACKEND_WORKER' for local backend-worker
+const BACKEND_MODE = 'BACKEND_WORKER'; // Set to 'PRODUCTION' for live, 'BACKEND_WORKER' for local backend-worker
 
 // API URLs
 const BACKEND_URLS = {
