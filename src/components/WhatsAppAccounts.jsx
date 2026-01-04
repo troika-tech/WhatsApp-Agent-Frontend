@@ -46,7 +46,9 @@ const WhatsAppAccounts = () => {
     try {
       setLoading(true);
       const response = await api.get('/api/accounts');
-      setAccounts(response.data.accounts || []);
+      const accountsData = response.data.accounts || [];
+      // Reverse to show last added first
+      setAccounts([...accountsData].reverse());
     } catch (error) {
       console.error('Error loading accounts:', error);
     } finally {
@@ -339,67 +341,94 @@ const WhatsAppAccounts = () => {
         </div>
       )}
 
-      {/* QR Code Display */}
+      {/* QR Code Modal */}
       {qrCode && (
-        <div className="glass-card rounded-xl p-6 border border-zinc-200">
-          <h2 className="text-xl font-semibold text-zinc-900 mb-4">Scan QR Code</h2>
-          <div className="flex flex-col items-center">
-            <div className="bg-white p-4 rounded-xl">
-              <img src={qrCode} alt="QR Code" className="w-64 h-64" />
-            </div>
-            <div className="mt-4 text-center">
-              <p className="text-zinc-600 mb-2">Open WhatsApp on your phone</p>
-              <ol className="text-sm text-zinc-500 text-left space-y-1">
-                <li>1. Go to Settings → Linked Devices</li>
-                <li>2. Tap &quot;Link a Device&quot;</li>
-                <li>3. Scan this QR code</li>
-              </ol>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-md border border-zinc-200 relative">
+            <button
+              onClick={() => {
+                setQrCode(null);
+                setSelectedAccountId(null);
+              }}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              <FaTimesCircle size={24} />
+            </button>
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4">Scan QR Code</h2>
+            <div className="flex flex-col items-center">
+              <div className="bg-white p-4 rounded-xl">
+                <img src={qrCode} alt="QR Code" className="w-64 h-64" />
+              </div>
+              <div className="mt-4 text-center">
+                <p className="text-zinc-600 mb-2">Open WhatsApp on your phone</p>
+                <ol className="text-sm text-zinc-500 text-left space-y-1">
+                  <li>1. Go to Settings → Linked Devices</li>
+                  <li>2. Tap &quot;Link a Device&quot;</li>
+                  <li>3. Scan this QR code</li>
+                </ol>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Pairing Code Display */}
+      {/* Pairing Code Modal */}
       {pairingCode && (
-        <div className="glass-card rounded-xl p-6 border border-zinc-200">
-          <h2 className="text-xl font-semibold text-zinc-900 mb-4">Pairing Code</h2>
-          <div className="flex flex-col items-center">
-            <div className="text-5xl font-mono font-bold text-emerald-600 tracking-wider mb-6 bg-emerald-50 px-8 py-4 rounded-xl border border-emerald-200">
-              {pairingCode}
-            </div>
-
-            {connectionStatus && (
-              <div className={`mb-4 px-4 py-2 rounded-full text-sm font-medium ${
-                connectionStatus.includes('Connected') ? 'bg-emerald-100 text-emerald-700' :
-                connectionStatus.includes('Pairing successful') || connectionStatus.includes('Connecting') ? 'bg-blue-100 text-blue-800 animate-pulse' :
-                connectionStatus.includes('Disconnected') ? 'bg-red-100 text-red-800' :
-                'bg-zinc-100 text-zinc-800'
-              }`}>
-                {connectionStatus.includes('Connecting') || connectionStatus.includes('reconnecting') ? '🔄 ' : ''}
-                {connectionStatus.includes('Connected') ? '✅ ' : ''}
-                {connectionStatus}
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="glass-card rounded-xl p-6 w-full max-w-lg border border-zinc-200 relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => {
+                setPairingCode(null);
+                setSelectedAccountId(null);
+                setConnectionStatus('');
+                if (pollingIntervalRef.current) {
+                  clearInterval(pollingIntervalRef.current);
+                  pollingIntervalRef.current = null;
+                }
+              }}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              <FaTimesCircle size={24} />
+            </button>
+            <h2 className="text-xl font-semibold text-zinc-900 mb-4">Pairing Code</h2>
+            <div className="flex flex-col items-center">
+              <div className="text-5xl font-mono font-bold text-emerald-600 tracking-wider mb-6 bg-emerald-50 px-8 py-4 rounded-xl border border-emerald-200">
+                {pairingCode}
               </div>
-            )}
 
-            <div className="mt-4 text-center max-w-md">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-yellow-800 font-semibold mb-2">Important:</p>
-                <p className="text-xs text-yellow-700">
-                  If WhatsApp says &quot;wrong number&quot; or &quot;check the number&quot;, the phone number in your account doesn&apos;t match your WhatsApp Business account number.
-                  Make sure the account phone number matches EXACTLY the number registered with WhatsApp Business.
+              {connectionStatus && (
+                <div className={`mb-4 px-4 py-2 rounded-full text-sm font-medium ${
+                  connectionStatus.includes('Connected') ? 'bg-emerald-100 text-emerald-700' :
+                  connectionStatus.includes('Pairing successful') || connectionStatus.includes('Connecting') ? 'bg-blue-100 text-blue-800 animate-pulse' :
+                  connectionStatus.includes('Disconnected') ? 'bg-red-100 text-red-800' :
+                  'bg-zinc-100 text-zinc-800'
+                }`}>
+                  {connectionStatus.includes('Connecting') || connectionStatus.includes('reconnecting') ? '🔄 ' : ''}
+                  {connectionStatus.includes('Connected') ? '✅ ' : ''}
+                  {connectionStatus}
+                </div>
+              )}
+
+              <div className="mt-4 text-center max-w-md">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-yellow-800 font-semibold mb-2">Important:</p>
+                  <p className="text-xs text-yellow-700">
+                    If WhatsApp says &quot;wrong number&quot; or &quot;check the number&quot;, the phone number in your account doesn&apos;t match your WhatsApp Business account number.
+                    Make sure the account phone number matches EXACTLY the number registered with WhatsApp Business.
+                  </p>
+                </div>
+                <p className="text-zinc-900 font-semibold mb-3">
+                  Enter this code on your WhatsApp Business app
                 </p>
+                <ol className="text-sm text-zinc-600 text-left space-y-2">
+                  <li>1. Open <span className="font-semibold text-zinc-900">WhatsApp Business</span> on your phone</li>
+                  <li>2. Go to <span className="font-semibold text-zinc-900">Settings → Linked Devices</span></li>
+                  <li>3. Tap <span className="font-semibold text-zinc-900">&quot;Link a Device&quot;</span></li>
+                  <li>4. Tap <span className="font-semibold text-zinc-900">&quot;Link with phone number instead&quot;</span></li>
+                  <li>5. Enter the code: <span className="font-mono font-bold text-emerald-600">{pairingCode}</span></li>
+                </ol>
+                <p className="text-xs text-zinc-500 mt-4">Code expires in 2 minutes</p>
               </div>
-              <p className="text-zinc-900 font-semibold mb-3">
-                Enter this code on your WhatsApp Business app
-              </p>
-              <ol className="text-sm text-zinc-600 text-left space-y-2">
-                <li>1. Open <span className="font-semibold text-zinc-900">WhatsApp Business</span> on your phone</li>
-                <li>2. Go to <span className="font-semibold text-zinc-900">Settings → Linked Devices</span></li>
-                <li>3. Tap <span className="font-semibold text-zinc-900">&quot;Link a Device&quot;</span></li>
-                <li>4. Tap <span className="font-semibold text-zinc-900">&quot;Link with phone number instead&quot;</span></li>
-                <li>5. Enter the code: <span className="font-mono font-bold text-emerald-600">{pairingCode}</span></li>
-              </ol>
-              <p className="text-xs text-zinc-500 mt-4">Code expires in 2 minutes</p>
             </div>
           </div>
         </div>
@@ -420,10 +449,10 @@ const WhatsAppAccounts = () => {
           </button>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {accounts.map(account => (
             <div key={account._id} className="glass-card rounded-xl p-5 border border-zinc-200 hover:border-emerald-300 transition-all">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-zinc-900">{account.accountName}</h3>
                   <p className="text-sm text-zinc-600">{account.phoneNumber}</p>
@@ -451,7 +480,7 @@ const WhatsAppAccounts = () => {
 
                 {/* IP Address Display */}
                 {(selectedAccountId === account._id || (getAccountTorEnabled(account._id) && getAccountTorCountry(account._id))) && (
-                  <div className="flex-1 flex items-center justify-center">
+                  <div className="w-full">
                     <div className={`px-4 py-3 rounded-lg border-2 ${
                       getAccountTorEnabled(account._id)
                         ? 'bg-purple-50 border-purple-300'
@@ -476,7 +505,7 @@ const WhatsAppAccounts = () => {
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col gap-2">
                   {account.isConnected ? (
                     <button
                       onClick={() => disconnect(account._id)}
@@ -493,7 +522,7 @@ const WhatsAppAccounts = () => {
                           setSelectedAccountId(account._id);
                           setSelectedBrowserType(e.target.value);
                         }}
-                        className="px-3 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         title="Select platform identity for this connection"
                       >
                         <option value="chrome">🌐 Chrome</option>
@@ -518,7 +547,7 @@ const WhatsAppAccounts = () => {
                         <select
                           value={getAccountTorCountry(account._id)}
                           onChange={(e) => setAccountTorCountry(account._id, e.target.value)}
-                          className="px-3 py-2 bg-purple-50 border border-purple-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-zinc-900"
+                          className="w-full px-3 py-2 bg-purple-50 border border-purple-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-zinc-900"
                           disabled={loadingTorCountries}
                         >
                           <option value="">🌍 Random Exit Node</option>
@@ -534,29 +563,32 @@ const WhatsAppAccounts = () => {
                         </select>
                       )}
 
-                      <button
-                        onClick={() => initWhatsApp(account._id, 'qr', undefined, selectedAccountId === account._id ? selectedBrowserType : 'chrome')}
-                        disabled={initLoading && selectedAccountId === account._id}
-                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50"
-                      >
-                        {initLoading && selectedAccountId === account._id && authMode === 'qr' ? 'Generating QR...' : 'QR Code'}
-                      </button>
-                      <button
-                        onClick={() => initWhatsApp(account._id, 'pairing', account.phoneNumber, selectedAccountId === account._id ? selectedBrowserType : 'chrome')}
-                        disabled={initLoading && selectedAccountId === account._id}
-                        className="px-4 py-2 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50"
-                      >
-                        {initLoading && selectedAccountId === account._id && authMode === 'pairing' ? 'Generating Code...' : 'Pairing Code'}
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => initWhatsApp(account._id, 'qr', undefined, selectedAccountId === account._id ? selectedBrowserType : 'chrome')}
+                          disabled={initLoading && selectedAccountId === account._id}
+                          className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50"
+                        >
+                          {initLoading && selectedAccountId === account._id && authMode === 'qr' ? 'Generating...' : 'QR Code'}
+                        </button>
+                        <button
+                          onClick={() => initWhatsApp(account._id, 'pairing', account.phoneNumber, selectedAccountId === account._id ? selectedBrowserType : 'chrome')}
+                          disabled={initLoading && selectedAccountId === account._id}
+                          className="px-4 py-2 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50"
+                        >
+                          {initLoading && selectedAccountId === account._id && authMode === 'pairing' ? 'Generating...' : 'Pairing Code'}
+                        </button>
+                      </div>
                     </>
                   )}
                   {/* Delete Button */}
                   <button
                     onClick={() => handleDeleteClick(account._id, account.accountName)}
-                    className="p-2 border border-zinc-300 text-zinc-600 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-colors"
+                    className="w-full p-2 border border-zinc-300 text-zinc-600 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-colors flex items-center justify-center gap-2"
                     title="Delete Account"
                   >
-                    <FaTrash size={18} />
+                    <FaTrash size={16} />
+                    <span className="text-sm font-medium">Delete Account</span>
                   </button>
                 </div>
               </div>
