@@ -46,6 +46,7 @@ const ManageChatbot = () => {
   const [autoChatLoading, setAutoChatLoading] = useState(false);
   const [showAutoChatDialog, setShowAutoChatDialog] = useState(false);
   const [autoChatTopic, setAutoChatTopic] = useState("");
+  const [autoChatLanguage, setAutoChatLanguage] = useState("en");
   const [currentAutoChatTopic, setCurrentAutoChatTopic] = useState("");
 
   // Add Chatbot Modal
@@ -189,11 +190,15 @@ const ManageChatbot = () => {
     setAutoChatLoading(true);
     try {
       const topicToStart = autoChatTopic.trim();
-      await api.post("/api/auto-chat/start", { topic: topicToStart });
+      await api.post("/api/auto-chat/start", { 
+        topic: topicToStart,
+        language: autoChatLanguage
+      });
       setAutoChatEnabled(true);
       setCurrentAutoChatTopic(topicToStart);
       setShowAutoChatDialog(false);
       setAutoChatTopic("");
+      setAutoChatLanguage("en"); // Reset to default
       toast.success(`Auto-chat started on topic: "${topicToStart}"`);
     } catch (error) {
       console.error("Auto-chat start error:", error);
@@ -2608,6 +2613,26 @@ const ManageChatbot = () => {
               rows={4}
               className="w-full px-4 py-3 bg-white border border-zinc-300 rounded-lg text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none mb-4"
             />
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-zinc-700 mb-2">
+                Response Language
+              </label>
+              <select
+                value={autoChatLanguage}
+                onChange={(e) => setAutoChatLanguage(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-zinc-300 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="en">English</option>
+                <option value="hi">हिंदी (Hindi)</option>
+                <option value="mr">मराठी (Marathi)</option>
+                <option value="ta">தமிழ் (Tamil)</option>
+                <option value="te">తెలుగు (Telugu)</option>
+                <option value="kn">ಕನ್ನಡ (Kannada)</option>
+              </select>
+              <p className="text-xs text-zinc-500 mt-1">
+                All messages will be generated in the selected language
+              </p>
+            </div>
             <p className="text-xs text-zinc-500 mb-4">
               This is for testing/automation only. Regular chatbot conversations
               will continue using their persona and knowledge base.
@@ -2617,6 +2642,7 @@ const ManageChatbot = () => {
                 onClick={() => {
                   setShowAutoChatDialog(false);
                   setAutoChatTopic("");
+                  setAutoChatLanguage("en");
                 }}
                 className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg text-zinc-700 hover:bg-zinc-50 transition-colors"
               >

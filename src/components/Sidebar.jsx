@@ -88,8 +88,6 @@ const Sidebar = ({ isOpen = false, onClose }) => {
     };
   }, []);
 
-  const isAdmin = user?.role === 'admin';
-
   // Mobile detection
   useEffect(() => {
     const checkMobile = () => {
@@ -113,6 +111,8 @@ const Sidebar = ({ isOpen = false, onClose }) => {
 
   // Combine base menu items with admin-only items (exactly like reference sidebar pattern)
   const menuItems = useMemo(() => {
+    const isAdmin = user?.role === 'admin';
+
     const baseItems = [
       { key: 'dashboard', path: '/dashboard', icon: FaHome, label: 'Dashboard' },
       { key: 'leads', path: '/leads', icon: FaUserFriends, label: 'Leads' },
@@ -135,7 +135,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
     // Combine exactly like reference: isAdmin ? [...baseMenuItems, ...adminMenuItems] : baseMenuItems
     const allItems = isAdmin ? [...baseItems, ...adminItems] : baseItems;
     return allItems;
-  }, [isAdmin, permissions.offerDisplayText]);
+  }, [user?.role, permissions.offerDisplayText]);
 
   // COMMENTED OUT TABS - Functionality preserved but hidden from sidebar
   // WhatsApp QR: Displays QR code for WhatsApp account connection/authentication
@@ -191,7 +191,7 @@ const Sidebar = ({ isOpen = false, onClose }) => {
   const visibleMenuItems = permissions.enabled
     ? menuItems.filter((item) => {
         // Always show admin-only items if user is admin (bypass permissions filter)
-        if (item.adminOnly && isAdmin) {
+        if (item.adminOnly && user?.role === 'admin') {
           return true;
         }
         // Filter other items based on allowedKeys if set
