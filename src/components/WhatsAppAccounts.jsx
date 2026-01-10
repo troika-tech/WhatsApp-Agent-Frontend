@@ -220,6 +220,41 @@ const WhatsAppAccounts = () => {
     }
   };
 
+  const autoConnect = async (accountId) => {
+    setInitLoading(true);
+    setSelectedAccountId(accountId);
+
+    try {
+      const loadingToast = toast.info('Connecting...', { autoClose: false });
+
+      // Try to auto-connect with 30 second timeout
+      const response = await api.post(
+        `/api/whatsapp/auto-connect/${accountId}`,
+        {},
+        { timeout: 30000 } // 30 second timeout
+      );
+
+      toast.dismiss(loadingToast);
+
+      if (response.data.connected) {
+        toast.success('Connected successfully!');
+        loadAccounts();
+      } else if (response.data.needsAuth) {
+        toast.error('Your account has been disconnected. Connect again', {
+          autoClose: 4000
+        });
+      }
+    } catch (error) {
+      console.error('Auto-connect error:', error);
+      toast.error('Your account has been disconnected. Connect again', {
+        autoClose: 4000
+      });
+    } finally {
+      setInitLoading(false);
+      setSelectedAccountId(null);
+    }
+  };
+
   const disconnect = async (accountId) => {
     try {
       await api.post(`/api/whatsapp/disconnect/${accountId}`, {});
@@ -515,6 +550,15 @@ const WhatsAppAccounts = () => {
                     </button>
                   ) : (
                     <>
+                      {/* Connect Button - Auto-reconnect using existing session */}
+                      <button
+                        onClick={() => autoConnect(account._id)}
+                        disabled={initLoading && selectedAccountId === account._id}
+                        className="px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors font-medium border border-green-300 disabled:opacity-50"
+                      >
+                        {initLoading && selectedAccountId === account._id ? 'Connecting...' : 'Connect'}
+                      </button>
+
                       {/* Browser Type Selector */}
                       <select
                         value={selectedAccountId === account._id ? selectedBrowserType : 'chrome'}
